@@ -324,28 +324,13 @@ function generateContent(repo: RepoState, type: "social" | "email" | "concept") 
   return `Dental practices do not need another complicated growth system.\n\n${repo.company.name} helps independent teams launch patient membership plans that are clear for patients, manageable for staff, and built for predictable recurring revenue.\n\n${repo.messaging[0].taglines[0]}`;
 }
 
-function loadInitialRepo() {
-  if (typeof window === "undefined") return initialRepo;
-
-  const stored = window.localStorage.getItem(storageKey);
-  if (!stored) return initialRepo;
-
-  try {
-    return JSON.parse(stored) as RepoState;
-  } catch {
-    return initialRepo;
-  }
-}
-
 export default function Home() {
-  const [repo, setRepo] = useState<RepoState>(loadInitialRepo);
+  const [repo, setRepo] = useState<RepoState>(initialRepo);
   const [section, setSection] = useState<NavSection>("Home");
   const [repoTab, setRepoTab] = useState<RepoKind>("Brand");
-  const [setupOpen, setSetupOpen] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return !window.localStorage.getItem(storageKey);
-  });
-  const [companyDraft, setCompanyDraft] = useState(() => loadInitialRepo().company);
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [companyDraft, setCompanyDraft] = useState(initialRepo.company);
+  const [persistenceReady, setPersistenceReady] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -359,8 +344,33 @@ export default function Home() {
   const [generatedDraft, setGeneratedDraft] = useState("");
 
   useEffect(() => {
+    const loadStoredRepo = window.setTimeout(() => {
+      const stored = window.localStorage.getItem(storageKey);
+      if (!stored) {
+        setPersistenceReady(true);
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stored) as RepoState;
+        setRepo(parsed);
+        setCompanyDraft(parsed.company);
+        setSetupOpen(false);
+      } catch {
+        window.localStorage.removeItem(storageKey);
+      } finally {
+        setPersistenceReady(true);
+      }
+
+    }, 0);
+
+    return () => window.clearTimeout(loadStoredRepo);
+  }, []);
+
+  useEffect(() => {
+    if (!persistenceReady) return;
     window.localStorage.setItem(storageKey, JSON.stringify(repo));
-  }, [repo]);
+  }, [persistenceReady, repo]);
 
   const understanding = useMemo(() => describeContext(repo), [repo]);
   const repoCounts = [
