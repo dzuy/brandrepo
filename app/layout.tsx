@@ -13,29 +13,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BrandHub Prototype",
+  metadataBase: new URL("https://brandrepo.dev"),
+  title: "BrandRepo",
   description: "A functional Marketing Repo prototype for company context, repo-grounded chat, and campaign content generation.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
   },
   openGraph: {
-    title: "BrandHub Prototype",
+    title: "BrandRepo",
+    url: "https://brandrepo.dev",
+    siteName: "BrandRepo",
     description: "Create a Marketing Repo, ask grounded questions, generate content, and save the work back.",
     images: [
       {
-        url: "/og.png",
+        url: "/og.svg",
         width: 1200,
         height: 630,
-        alt: "BrandHub Marketing Repo prototype",
+        alt: "BrandRepo Marketing Repo prototype",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BrandHub Prototype",
+    title: "BrandRepo",
     description: "A functional Marketing Repo prototype with repo-grounded AI chat and save-back content generation.",
-    images: ["/og.png"],
+    images: ["/og.svg"],
   },
 };
 

@@ -1,8 +1,12 @@
-# vinext-starter
+# BrandRepo
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+BrandRepo is a Marketing Repo application for collecting company context, brand guidelines, messaging, campaign work, and assets in one structured workspace.
+
+Domain: `brandrepo.dev`
+
+## Local Development
+
+BrandRepo currently runs on [vinext](https://github.com/cloudflare/vinext) with Supabase for auth, repo persistence, and asset storage.
 
 ## Prerequisites
 
@@ -16,7 +20,7 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+This project does not use `wrangler.jsonc`.
 
 ## Included Shape
 
@@ -91,7 +95,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm test`: build the app and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More

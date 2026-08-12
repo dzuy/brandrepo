@@ -1,0 +1,26 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0f1117"/>
+  <rect x="72" y="72" width="1056" height="486" rx="22" fill="#171a22" stroke="#303746"/>
+  <rect x="816" y="72" width="312" height="486" rx="22" fill="#103444"/>
+  <circle cx="944" cy="210" r="80" fill="#0891b2" fill-opacity="0.28"/>
+  <circle cx="1052" cy="384" r="132" fill="#7c3aed" fill-opacity="0.16"/>
+  <g transform="translate(118 128)">
+    <rect width="64" height="64" rx="14" fill="#103444"/>
+    <path d="M32 13V51M13 32H51M18.6 18.6L45.4 45.4M45.4 18.6L18.6 45.4" stroke="#67e8f9" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="118" y="285" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="760" letter-spacing="-1">BrandRepo</text>
+  <text x="122" y="350" fill="#c6ceda" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="520">Marketing Repo for company context</text>
+  <text x="122" y="414" fill="#9aa4b2" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="420">Create repos, ground chat in brand knowledge, generate content, and save work back.</text>
+  <text x="122" y="494" fill="#67e8f9" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700">brandrepo.dev</text>
+  <g transform="translate(712 150)">
+    <rect width="310" height="66" rx="14" fill="#171a22" stroke="#414b5d"/>
+    <rect x="24" y="24" width="142" height="8" rx="4" fill="#c6ceda"/>
+    <rect x="24" y="40" width="90" height="8" rx="4" fill="#67e8f9"/>
+    <rect y="94" width="310" height="66" rx="14" fill="#171a22" stroke="#414b5d"/>
+    <rect x="24" y="118" width="188" height="8" rx="4" fill="#c6ceda"/>
+    <rect x="24" y="134" width="116" height="8" rx="4" fill="#67e8f9"/>
+    <rect y="188" width="310" height="66" rx="14" fill="#171a22" stroke="#414b5d"/>
+    <rect x="24" y="212" width="164" height="8" rx="4" fill="#c6ceda"/>
+    <rect x="24" y="228" width="128" height="8" rx="4" fill="#67e8f9"/>
+  </g>
+</svg>
