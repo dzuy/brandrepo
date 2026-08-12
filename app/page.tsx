@@ -7,7 +7,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 type NavSection = "Home" | "Repo" | "Chat" | "Campaigns" | "Assets" | "Settings";
 type ThemeMode = "dark" | "light";
 type RepoKind =
-  | "Brand Guidelines"
+  | "Brand Basics"
   | "Identity"
   | "Imagery"
   | "Colors"
@@ -15,8 +15,7 @@ type RepoKind =
   | "Typography"
   | "Messaging"
   | "Audiences"
-  | "Channel SEO"
-  | "Rules";
+  | "Channel SEO";
 
 type Source = {
   id: string;
@@ -94,11 +93,58 @@ type Asset = {
   sources: Source[];
 };
 
+type ImageReferenceAsset = {
+  name: string;
+  url: string;
+  description: string;
+  metadata: string[];
+};
+
+type ColorToken = {
+  id: string;
+  name: string;
+  hex: string;
+  description: string;
+  tag?: string;
+};
+
+type TypographySettings = {
+  fontNames: string[];
+  weights: string[];
+  usageRules: string;
+};
+
+type ChannelSeoSettings = {
+  outputDefaults: string;
+  blog: string;
+  linkedin: string;
+  x: string;
+  instagram: string;
+  carousel: string;
+  closingLines: string;
+  seoPlanning: string;
+  keywords: string;
+  hashtags: string;
+  successMetrics: string;
+};
+
+type IdentitySettings = {
+  logos: string;
+  icons: string;
+  elements: string;
+  usage: string;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   citations?: Source[];
+  generatedImage?: {
+    dataUrl: string;
+    prompt: string;
+    saved?: boolean;
+  };
   saved?: boolean;
 };
 
@@ -114,6 +160,11 @@ type RepoState = {
   messaging: Messaging[];
   campaigns: Campaign[];
   assets: Asset[];
+  colors: ColorToken[];
+  colorRules: string;
+  typography: TypographySettings;
+  channelSeo: ChannelSeoSettings;
+  identity: IdentitySettings;
   sectionUrls: Partial<Record<RepoKind, string[]>>;
   sectionNotes: Partial<Record<RepoKind, string[]>>;
   activity: string[];
@@ -133,6 +184,8 @@ type WorkspaceRow = {
   name: string;
   data: WorkspaceState;
 };
+
+type IdentityField = keyof IdentitySettings;
 
 type SourceDocument = {
   id: string;
@@ -166,8 +219,12 @@ type ImportRun = {
 };
 
 const storageKey = "brandhub-workspaces-v2";
-const themeStorageKey = "brandhub-theme-v1";
+const themeStorageKey = "brandrepo-theme-v1";
+const legacyThemeStorageKey = "brandhub-theme-v1";
+const repoNavStorageKey = "brandrepo-repo-nav-expanded-v1";
+const drawerAnimationMs = 220;
 const assetBucket = "brandhub-assets";
+const chatSavedMessagingSourceLabel = "Chat answer saved to Messaging";
 const previousWorkspaceStorageKey = "brandhub-workspaces-v1";
 const singleWorkspaceStorageKey = "brandhub-empty-workspace-v1";
 const legacyStorageKey = "brandhub-v1-prototype";
@@ -192,14 +249,40 @@ const initialRepo: RepoState = {
   messaging: [],
   campaigns: [],
   assets: [],
+  colors: [],
+  colorRules: "",
+  typography: {
+    fontNames: [],
+    weights: [],
+    usageRules: "",
+  },
+  channelSeo: {
+    outputDefaults: "",
+    blog: "",
+    linkedin: "",
+    x: "",
+    instagram: "",
+    carousel: "",
+    closingLines: "",
+    seoPlanning: "",
+    keywords: "",
+    hashtags: "",
+    successMetrics: "",
+  },
+  identity: {
+    logos: "",
+    icons: "",
+    elements: "",
+    usage: "",
+  },
   sectionUrls: {},
   sectionNotes: {},
   activity: [],
 };
 
-const navItems: NavSection[] = ["Home", "Repo", "Chat", "Campaigns", "Assets"];
+const navItems: NavSection[] = ["Home", "Repo", "Chat", "Assets"];
 const repoTabs: RepoKind[] = [
-  "Brand Guidelines",
+  "Brand Basics",
   "Identity",
   "Imagery",
   "Colors",
@@ -208,7 +291,13 @@ const repoTabs: RepoKind[] = [
   "Messaging",
   "Audiences",
   "Channel SEO",
-  "Rules",
+];
+
+const identitySections: { field: IdentityField; label: string; aliases: string[] }[] = [
+  { field: "logos", label: "Logos", aliases: ["logos", "primary logo", "wordmark", "logomark", "logo variants"] },
+  { field: "icons", label: "Icons", aliases: ["icons", "app icon", "favicon"] },
+  { field: "elements", label: "Elements", aliases: ["elements", "asset package", "identity asset package"] },
+  { field: "usage", label: "Usage", aliases: ["usage", "clear space", "minimum size", "approved usage", "incorrect usage", "background usage", "relationship to brand color"] },
 ];
 
 function emptySectionUrls(): Partial<Record<RepoKind, string[]>> {
@@ -235,15 +324,19 @@ function createWorkspace(repo: RepoState = initialRepo, name?: string): Workspac
   return {
     id: createId("workspace"),
     name: workspaceName,
-    repo,
+    repo: {
+      ...initialRepo,
+      ...repo,
+      colors: normalizeColorTokens(repo.colors),
+      colorRules: repo.colorRules ?? "",
+      typography: normalizeTypographySettings(repo.typography),
+      channelSeo: normalizeChannelSeoSettings(repo.channelSeo),
+      identity: normalizeIdentitySettings(repo.identity),
+    },
     chatMessages: createWelcomeChat(),
     generatedDraft: "",
     generationType: "social",
   };
-}
-
-function sourceText(source: Source) {
-  return `${source.label}${source.type === "generated" ? " generated" : ""}`;
 }
 
 function normalizeAccountName(value: string) {
@@ -262,6 +355,17 @@ function isValidAccountName(value: string) {
 function getAccountName(user: User | null) {
   const value = user?.user_metadata?.account_name;
   return typeof value === "string" ? value : "";
+}
+
+function getLocallyActiveWorkspaceId() {
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return "";
+    const parsed = JSON.parse(stored) as { activeWorkspaceId?: string };
+    return parsed.activeWorkspaceId ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function classifyUpload(fileName: string): Asset["type"] {
@@ -368,11 +472,8 @@ function sectionForSource(source: { title: string; url: string }): RepoKind {
   if (value.includes("seo") || value.includes("search") || value.includes("channel") || value.includes("content distribution")) {
     return "Channel SEO";
   }
-  if (value.includes("rule") || value.includes("usage") || value.includes("do not") || value.includes("don't") || value.includes("avoid")) {
-    return "Rules";
-  }
   if (value.includes("messaging") || value.includes("narrative") || value.includes("positioning")) return "Messaging";
-  return "Brand Guidelines";
+  return "Brand Basics";
 }
 
 function getRepoSectionUrls(repo: RepoState, tab: RepoKind) {
@@ -402,6 +503,650 @@ function getRepoSectionNotes(repo: RepoState, tab: RepoKind) {
   return notes[tab] ?? [];
 }
 
+function getRepoColors(repo: RepoState) {
+  return normalizeColorTokens(repo.colors);
+}
+
+function getRepoColorRules(repo: RepoState) {
+  return repo.colorRules ?? "";
+}
+
+function getRepoTypography(repo: RepoState) {
+  return normalizeTypographySettings(repo.typography);
+}
+
+function getRepoChannelSeo(repo: RepoState) {
+  return normalizeChannelSeoSettings(repo.channelSeo);
+}
+
+function getRepoIdentity(repo: RepoState) {
+  return normalizeIdentitySettings(repo.identity);
+}
+
+function normalizeColorTokens(colors: ColorToken[] | undefined) {
+  return (colors ?? []).map((color) => ({
+    id: color.id,
+    name: color.name ?? color.tag ?? "",
+    hex: color.hex ?? "",
+    description: color.description ?? "",
+  }));
+}
+
+function normalizeTypographySettings(typography: TypographySettings | undefined) {
+  return {
+    fontNames: typography?.fontNames ?? [],
+    weights: typography?.weights ?? [],
+    usageRules: typography?.usageRules ?? "",
+  };
+}
+
+function normalizeChannelSeoSettings(channelSeo: ChannelSeoSettings | undefined) {
+  return {
+    outputDefaults: channelSeo?.outputDefaults ?? "",
+    blog: channelSeo?.blog ?? "",
+    linkedin: channelSeo?.linkedin ?? "",
+    x: channelSeo?.x ?? "",
+    instagram: channelSeo?.instagram ?? "",
+    carousel: channelSeo?.carousel ?? "",
+    closingLines: channelSeo?.closingLines ?? "",
+    seoPlanning: channelSeo?.seoPlanning ?? "",
+    keywords: channelSeo?.keywords ?? "",
+    hashtags: channelSeo?.hashtags ?? "",
+    successMetrics: channelSeo?.successMetrics ?? "",
+  };
+}
+
+function normalizeIdentitySettings(identity: (Partial<IdentitySettings> & Record<string, string | undefined>) | undefined) {
+  const logos = [
+    identity?.logos,
+    identity?.overview,
+    identity?.primaryLogo,
+    identity?.wordmark,
+    identity?.logomark,
+    identity?.logoVariants,
+  ].filter(Boolean);
+  const icons = [identity?.icons, identity?.appIcon, identity?.favicon].filter(Boolean);
+  const elements = [identity?.elements, identity?.assetPackage].filter(Boolean);
+  const usage = [
+    identity?.usage,
+    identity?.clearSpace,
+    identity?.minimumSize,
+    identity?.approvedUsage,
+    identity?.incorrectUsage,
+    identity?.backgroundUsage,
+    identity?.relationshipToColor,
+  ].filter(Boolean);
+
+  return {
+    logos: logos.join("\n\n"),
+    icons: icons.join("\n\n"),
+    elements: elements.join("\n\n"),
+    usage: usage.join("\n\n"),
+  };
+}
+
+function normalizeHexColor(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const withoutHash = trimmed.replace(/^#/, "").replace(/[^a-fA-F0-9]/g, "").slice(0, 6);
+  return withoutHash ? `#${withoutHash}` : "";
+}
+
+function isCompleteHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value.trim());
+}
+
+function sectionMarkdownFileName(tab: RepoKind) {
+  return `${tab.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}.md`;
+}
+
+function markdownLine(value: string | undefined) {
+  return value?.trim() || "_Not set._";
+}
+
+function markdownList(values: string[]) {
+  return values.length ? values.map((value) => `- ${value}`).join("\n") : "_None yet._";
+}
+
+function markdownNotes(notes: string[]) {
+  return notes.length ? notes.map((note, index) => `### Note ${index + 1}\n\n${note}`).join("\n\n") : "_No notes yet._";
+}
+
+type ParsedMarkdownSection = {
+  level: number;
+  title: string;
+  displayTitle: string;
+  content: string;
+};
+
+function stripMarkdownFormatting(value: string) {
+  return value
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
+}
+
+function normalizeMarkdownHeading(value: string) {
+  return stripMarkdownFormatting(value)
+    .replace(/^\s*\d+[).:-]?\s*/, "")
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanMarkdownValue(value: string | undefined) {
+  const cleaned = (value ?? "")
+    .split("\n")
+    .map((line) =>
+      stripMarkdownFormatting(line)
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^[-*]\s+/, "")
+        .replace(/^\d+[).]\s+/, "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  if (!cleaned || cleaned === "_Not set._" || cleaned === "_None yet._") return "";
+  return cleaned;
+}
+
+function extractMarkdownItems(value: string | undefined) {
+  const section = value?.trim();
+  if (!section) return [];
+
+  const childHeadings = [...section.matchAll(/^(#{1,6})\s+(.+)$/gm)];
+
+  if (childHeadings.length) {
+    return childHeadings
+      .map((heading, index) => {
+        const title = stripMarkdownFormatting(heading[2]).replace(/^\s*\d+[).:-]?\s*/, "").trim();
+        const contentStart = (heading.index ?? 0) + heading[0].length;
+        const contentEnd = childHeadings[index + 1]?.index ?? section.length;
+        const body = cleanMarkdownValue(section.slice(contentStart, contentEnd));
+        return body ? `${title} - ${body}` : title;
+      })
+      .filter(Boolean);
+  }
+
+  const listItems = section
+    .split("\n")
+    .filter((line) => /^\s*(?:[-*]|\d+[).])\s+/.test(line))
+    .map(cleanMarkdownValue)
+    .filter(Boolean);
+
+  if (listItems.length) return listItems;
+
+  return cleanMarkdownValue(section)
+    .split(/\n{2,}|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function parseMarkdownSections(markdown: string) {
+  const headingPattern = /^(#{1,6})\s+(.+)$/gm;
+  const headings = [...markdown.matchAll(headingPattern)].map((heading) => ({
+    level: heading[1].length,
+    displayTitle: stripMarkdownFormatting(heading[2]).replace(/^\s*\d+[).:-]?\s*/, "").trim(),
+    title: normalizeMarkdownHeading(heading[2]),
+    index: heading.index ?? 0,
+    length: heading[0].length,
+  }));
+
+  return headings.map((heading, index) => {
+    const nextPeerOrParent = headings.slice(index + 1).find((candidate) => candidate.level <= heading.level);
+    const contentStart = heading.index + heading.length;
+    const contentEnd = nextPeerOrParent?.index ?? markdown.length;
+
+    return {
+      level: heading.level,
+      title: heading.title,
+      displayTitle: heading.displayTitle,
+      content: markdown.slice(contentStart, contentEnd).trim(),
+    };
+  });
+}
+
+function findMarkdownSection(sections: ParsedMarkdownSection[], labels: string[]) {
+  const normalizedLabels = labels.map(normalizeMarkdownHeading);
+  const match = sections.find((section) =>
+    normalizedLabels.some((label) => section.title === label || section.title.includes(label)),
+  );
+  return match?.content;
+}
+
+function parseMessagingMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+
+  return {
+    primaryValueProposition: cleanMarkdownValue(findMarkdownSection(sections, ["primary value proposition", "value proposition"])),
+    keyMessages: extractMarkdownItems(findMarkdownSection(sections, ["key messages", "3-5 key messages"])).slice(0, 5),
+    targetCustomer: cleanMarkdownValue(findMarkdownSection(sections, ["target customer", "customer", "audience"])),
+    mainCustomerProblem: cleanMarkdownValue(findMarkdownSection(sections, ["main customer problem", "customer problem", "problem"])),
+    keyDifferentiators: extractMarkdownItems(findMarkdownSection(sections, ["key differentiators", "differentiators"])),
+    tagline: cleanMarkdownValue(findMarkdownSection(sections, ["tagline", "tagline if one exists"])),
+  };
+}
+
+function parseVoiceToneMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+
+  return {
+    voiceCharacteristics: extractMarkdownItems(findMarkdownSection(sections, ["voice characteristics", "voice"])),
+    writingRules: extractMarkdownItems(findMarkdownSection(sections, ["writing rules", "rules"])),
+    wordsToUse: extractMarkdownItems(findMarkdownSection(sections, ["words phrases to use", "words/phrases to use", "phrases to use", "approved terminology"])),
+    wordsToAvoid: extractMarkdownItems(findMarkdownSection(sections, ["words phrases to avoid", "words/phrases to avoid", "phrases to avoid", "prohibited terminology"])),
+  };
+}
+
+function parseColorsMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+  const rules = cleanMarkdownValue(findMarkdownSection(sections, ["rules", "color rules", "usage rules", "color usage", "guidelines"]));
+  const sectionColors = sections
+    .filter((section) => {
+      const hasHex = /#[0-9a-fA-F]{6}\b/.test(section.content);
+      const hasNestedHeadings = /^#{1,6}\s+/.test(section.content);
+      const isRules = section.title.includes("rules") || section.title.includes("guidelines") || section.title.includes("usage");
+      const isPaletteGroup = ["colors", "primary colors", "secondary colors", "accent color", "color palette", "palette"].includes(section.title);
+      return hasHex && !hasNestedHeadings && !isRules && !isPaletteGroup;
+    })
+    .map((section, index) => {
+      const hex = normalizeHexColor(section.content.match(/#[0-9a-fA-F]{6}\b/)?.[0] ?? "");
+      const description = cleanMarkdownValue(
+        section.content
+          .split("\n")
+          .filter((line) => !/#[0-9a-fA-F]{6}\b/.test(line))
+          .join("\n"),
+      );
+
+      return {
+        id: createId("color-md-import"),
+        name: section.displayTitle || `Color ${index + 1}`,
+        hex,
+        description,
+      };
+    });
+  const fallbackColors = markdown
+    .split("\n")
+    .filter((line) => /#[0-9a-fA-F]{6}\b/.test(line))
+    .map((line, index) => {
+      const hexMatch = line.match(/#[0-9a-fA-F]{6}\b/);
+      const hex = normalizeHexColor(hexMatch?.[0] ?? "");
+      const beforeHex = stripMarkdownFormatting(line.slice(0, hexMatch?.index ?? 0))
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^[-*]\s+/, "")
+        .replace(/^\d+[).]\s+/, "")
+        .replace(/\bhex\b\s*:?/i, "")
+        .replace(/[:|–—-]+\s*$/, "")
+        .trim();
+
+      return {
+        id: createId("color-md-import"),
+        name: beforeHex || `Color ${index + 1}`,
+        hex,
+        description: "",
+      };
+    });
+
+  return { colors: sectionColors.length ? sectionColors : fallbackColors, rules };
+}
+
+function parseTypographyMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+
+  return {
+    fontNames: extractMarkdownItems(findMarkdownSection(sections, ["font names", "fonts", "typefaces"])),
+    weights: extractMarkdownItems(findMarkdownSection(sections, ["weights", "font weights"])),
+    usageRules: cleanMarkdownValue(findMarkdownSection(sections, ["basic usage rules", "usage rules", "typography guidance", "rules"])),
+  };
+}
+
+function parseChannelSeoMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+  const intro = markdown.slice(0, markdown.search(/^##\s+/m) >= 0 ? markdown.search(/^##\s+/m) : 0);
+
+  return {
+    outputDefaults: cleanMarkdownValue(intro),
+    blog: cleanMarkdownValue(findMarkdownSection(sections, ["blog"])),
+    linkedin: cleanMarkdownValue(findMarkdownSection(sections, ["linkedin"])),
+    x: cleanMarkdownValue(findMarkdownSection(sections, ["x", "twitter"])),
+    instagram: cleanMarkdownValue(findMarkdownSection(sections, ["instagram"])),
+    carousel: cleanMarkdownValue(findMarkdownSection(sections, ["carousel", "carousel alternative to instagram asset"])),
+    closingLines: cleanMarkdownValue(findMarkdownSection(sections, ["closing lines"])),
+    seoPlanning: cleanMarkdownValue(findMarkdownSection(sections, ["seo", "seo for planning"])),
+    keywords: cleanMarkdownValue(findMarkdownSection(sections, ["keywords by pillar", "keywords"])),
+    hashtags: cleanMarkdownValue(findMarkdownSection(sections, ["hashtags"])),
+    successMetrics: cleanMarkdownValue(findMarkdownSection(sections, ["success metrics"])),
+  };
+}
+
+function parseIdentityMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+  const firstSectionIndex = markdown.search(/^##\s+/m);
+  const overview = firstSectionIndex > -1 ? markdown.slice(0, firstSectionIndex) : markdown;
+
+  return {
+    logos: [
+      cleanMarkdownValue(findMarkdownSection(sections, ["logos"])),
+      cleanMarkdownValue(overview.replace(/^#\s+Identity\s*/i, "")),
+      cleanMarkdownValue(findMarkdownSection(sections, ["primary logo"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["wordmark"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["logomark"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["logo variants"])),
+    ].filter(Boolean).join("\n\n"),
+    icons: [
+      cleanMarkdownValue(findMarkdownSection(sections, ["icons"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["app icon"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["favicon"])),
+    ].filter(Boolean).join("\n\n"),
+    elements: [
+      cleanMarkdownValue(findMarkdownSection(sections, ["elements"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["identity asset package", "asset package"])),
+    ].filter(Boolean).join("\n\n"),
+    usage: [
+      cleanMarkdownValue(findMarkdownSection(sections, ["usage"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["clear space"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["minimum size"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["approved usage"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["incorrect usage"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["background usage"])),
+      cleanMarkdownValue(findMarkdownSection(sections, ["relationship to brand color"])),
+    ].filter(Boolean).join("\n\n"),
+  };
+}
+
+function generateSectionMarkdown(repo: RepoState, tab: RepoKind) {
+  const notes = getRepoSectionNotes(repo, tab);
+  const visualAssets = repo.assets.filter((asset) => {
+    const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
+    if (tab === "Identity") {
+      return ["logo", "logotype", "wordmark", "icon", "symbol", "element", "pattern", "graphic", "illustration"].some((term) =>
+        haystack.includes(term),
+      );
+    }
+    if (tab === "Imagery") {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      const isIdentityAsset =
+        metadata.includes("identity") ||
+        ["logo", "logotype", "wordmark", "icon", "symbol", "favicon", "element", "pattern", "graphic", "illustration"].some((term) =>
+          haystack.includes(term),
+        );
+      return !isIdentityAsset && (metadata.includes("imagery") || metadata.includes("photo") || haystack.includes("photo") || haystack.includes("imagery"));
+    }
+    return false;
+  });
+  const rulesForTab = repo.brand.rules.filter((rule) => {
+    const normalized = rule.toLowerCase();
+    if (tab === "Colors") return normalized.includes("color") || normalized.includes("colour") || normalized.includes("#");
+    if (tab === "Typography") return normalized.includes("type") || normalized.includes("font") || normalized.includes("typography");
+    if (tab === "Identity") return ["logo", "wordmark", "logotype", "icon", "symbol", "pictogram", "illustration", "element"].some((term) => normalized.includes(term));
+    if (tab === "Imagery") return normalized.includes("photo") || normalized.includes("image") || normalized.includes("imagery");
+    return false;
+  });
+
+  if (tab === "Brand Basics") {
+    return `# Brand Basics
+
+## Brand name
+${markdownLine(repo.company.name)}
+
+## Website URL
+${markdownLine(repo.company.website)}
+
+## One-line description
+${markdownLine(repo.company.description)}
+
+## About
+${markdownLine(repo.brand.description)}
+`;
+  }
+
+  if (tab === "Identity") {
+    const identity = getRepoIdentity(repo);
+    const identityAssetMarkdown = identitySections
+      .map((section) => {
+        const singularTag = section.field.replace(/s$/, "");
+        const sectionAssets = visualAssets.filter((asset) => asset.metadata.join(" ").toLowerCase().includes(singularTag));
+        return `### ${section.label} files\n${
+          sectionAssets.length
+            ? sectionAssets
+                .map((asset) =>
+                  [
+                    `- ${markdownLine(asset.name)}`,
+                    asset.description ? `  Description: ${markdownLine(asset.description)}` : "",
+                    asset.url ? `  URL: ${asset.url}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n"),
+                )
+                .join("\n")
+            : "_No files yet._"
+        }`;
+      })
+      .join("\n\n");
+
+    return `# Identity
+
+${identitySections
+  .map((section) => `## ${section.label}\n${markdownLine(identity[section.field])}`)
+  .join("\n\n")}
+
+## Uploaded files
+${identityAssetMarkdown}
+`;
+  }
+
+  if (tab === "Imagery") {
+    return `# Imagery
+
+## Usage guidance
+${markdownList(rulesForTab)}
+
+## Assets
+${visualAssets.length ? visualAssets.map((asset) => `- ${asset.name}${asset.url ? `: ${asset.url}` : ""}`).join("\n") : "_No assets yet._"}
+
+## Notes
+${markdownNotes(notes)}
+`;
+  }
+
+  if (tab === "Colors") {
+    return `# Colors
+
+## Palette
+${getRepoColors(repo).length ? getRepoColors(repo).map((color) => `### ${markdownLine(color.name)}\n\n- Hex: ${markdownLine(color.hex)}\n- Description: ${markdownLine(color.description)}`).join("\n\n") : "_No colors yet._"}
+
+## Rules
+${markdownLine(getRepoColorRules(repo))}
+`;
+  }
+
+  if (tab === "Voice & Tone") {
+    return `# Voice & Tone
+
+## Voice characteristics
+${markdownList(repo.brand.voice)}
+
+## Writing rules
+${markdownList(repo.brand.rules)}
+
+## Words/phrases to use
+${markdownList(repo.brand.approvedTerms)}
+
+## Words/phrases to avoid
+${markdownList(repo.brand.prohibitedTerms)}
+`;
+  }
+
+  if (tab === "Typography") {
+    const typography = getRepoTypography(repo);
+
+    return `# Typography
+
+## Font names
+${markdownList(typography.fontNames)}
+
+## Weights
+${markdownList(typography.weights)}
+
+## Basic usage rules
+${markdownLine(typography.usageRules)}
+`;
+  }
+
+  if (tab === "Messaging") {
+    const message = repo.messaging[0];
+    const audience = repo.audiences[0];
+    return `# Messaging
+
+## Primary value proposition
+${markdownLine(message?.valueProps[0] ?? message?.positioning)}
+
+## Key messages
+${markdownList(message?.keyMessages ?? [])}
+
+## Target customer
+${markdownLine(audience?.name)}
+
+## Main customer problem
+${markdownLine(audience?.painPoints[0])}
+
+## Key differentiators
+${markdownList(message?.proofPoints ?? [])}
+
+## Tagline
+${markdownLine(message?.taglines[0])}
+`;
+  }
+
+  if (tab === "Audiences") {
+    return `# Audiences
+
+${repo.audiences.length ? repo.audiences.map((audience) => `## ${audience.name}\n\n${markdownLine(audience.description)}\n\n### Needs\n${markdownList(audience.needs)}\n\n### Pain points\n${markdownList(audience.painPoints)}\n\n### Channels\n${markdownList(audience.channels)}`).join("\n\n") : "_No audiences yet._"}
+
+## Notes
+${markdownNotes(notes)}
+`;
+  }
+
+  if (tab === "Channel SEO") {
+    const channelSeo = getRepoChannelSeo(repo);
+
+    return `# Channel SEO
+
+## Output defaults
+${markdownLine(channelSeo.outputDefaults)}
+
+## Blog
+${markdownLine(channelSeo.blog)}
+
+## LinkedIn
+${markdownLine(channelSeo.linkedin)}
+
+## X
+${markdownLine(channelSeo.x)}
+
+## Instagram
+${markdownLine(channelSeo.instagram)}
+
+## Carousel
+${markdownLine(channelSeo.carousel)}
+
+## Closing lines
+${markdownLine(channelSeo.closingLines)}
+
+## SEO planning
+${markdownLine(channelSeo.seoPlanning)}
+
+## Keywords
+${markdownLine(channelSeo.keywords)}
+
+## Hashtags
+${markdownLine(channelSeo.hashtags)}
+
+## Success metrics
+${markdownLine(channelSeo.successMetrics)}
+`;
+  }
+}
+
+function generateRepoMarkdownContext(repo: RepoState) {
+  const sectionMarkdown = repoTabs
+    .map((tab) => `--- ${sectionMarkdownFileName(tab)} ---\n${generateSectionMarkdown(repo, tab)}`)
+    .join("\n\n");
+  const assetMarkdown = repo.assets.length
+    ? repo.assets
+        .map((asset) =>
+          [
+            `- ${asset.name}`,
+            `  Type: ${asset.type}`,
+            asset.description ? `  Description: ${asset.description}` : "",
+            asset.metadata.length ? `  Metadata: ${asset.metadata.join(", ")}` : "",
+            asset.url ? `  URL: ${asset.url}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        )
+        .join("\n")
+    : "_No assets uploaded._";
+
+  return `${sectionMarkdown}\n\n--- assets.md ---\n# Assets\n${assetMarkdown}`;
+}
+
+function isImageGenerationPrompt(prompt: string) {
+  const normalized = prompt.toLowerCase();
+  const hasCreationIntent = /\b(generate|create|make|design|mock\s?up|mockup|draft|produce)\b/.test(normalized);
+  const hasVisualTarget = /\b(image|ad|advertisement|mock\s?up|mockup|visual|poster|banner|social graphic|creative|asset)\b/.test(normalized);
+  return hasCreationIntent && hasVisualTarget;
+}
+
+function getImageGenerationReferences(repo: RepoState): ImageReferenceAsset[] {
+  const priorityTerms = ["logo", "wordmark", "logotype", "identity", "icon", "element"];
+
+  return repo.assets
+    .filter((asset) => asset.type === "Image" && asset.url && !asset.metadata.includes("generated"))
+    .map((asset) => {
+      const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
+      const priorityIndex = priorityTerms.findIndex((term) => haystack.includes(term));
+      return { asset, priorityIndex: priorityIndex === -1 ? 99 : priorityIndex };
+    })
+    .filter((item) => item.priorityIndex < 99)
+    .sort((first, second) => first.priorityIndex - second.priorityIndex)
+    .slice(0, 5)
+    .map(({ asset }) => ({
+      name: asset.name,
+      url: asset.url as string,
+      description: asset.description,
+      metadata: asset.metadata,
+    }));
+}
+
+function isRepoSectionVisualAsset(asset: Asset) {
+  const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
+  const sectionTerms = [
+    "identity",
+    "logo",
+    "logos",
+    "wordmark",
+    "logotype",
+    "icon",
+    "icons",
+    "favicon",
+    "element",
+    "elements",
+    "pattern",
+    "graphic",
+    "imagery",
+    "photo",
+    "photography",
+  ];
+
+  return asset.type === "Image" && sectionTerms.some((term) => haystack.includes(term));
+}
+
 function sourceDocumentsToSectionUrls(sources: SourceDocument[]) {
   return sources.reduce<Partial<Record<RepoKind, string[]>>>((accumulator, source) => {
     const section = sectionForSource(source);
@@ -425,90 +1170,6 @@ function mergeSectionUrls(
   return merged;
 }
 
-function answerFromRepo(repo: RepoState, prompt: string): ChatMessage {
-  const normalized = prompt.toLowerCase();
-  const citations = [repo.brand.sources[0], repo.messaging[0]?.sources[0], repo.audiences[0]?.sources[0]].filter(
-    Boolean,
-  ) as Source[];
-
-  const hasContext =
-    Boolean(repo.company.description) ||
-    Boolean(repo.brand.description) ||
-    repo.products.length > 0 ||
-    repo.audiences.length > 0 ||
-    repo.messaging.length > 0 ||
-    repo.campaigns.length > 0 ||
-    repo.assets.length > 0;
-
-  if (!hasContext) {
-    return {
-      id: createId("assistant"),
-      role: "assistant",
-      text: "I do not have any repo context yet. Add company details or upload source material in Repo, then I can answer from BrandRepo context.",
-    };
-  }
-
-  if (normalized.includes("position") && repo.messaging[0]) {
-    return {
-      id: createId("assistant"),
-      role: "assistant",
-      text: `The core positioning is: ${repo.messaging[0].positioning} The strongest supporting ideas are ${repo.messaging[0].valueProps.join(" ")}`,
-      citations,
-    };
-  }
-
-  if ((normalized.includes("audience") || normalized.includes("who")) && repo.audiences.length) {
-    return {
-      id: createId("assistant"),
-      role: "assistant",
-      text: `The primary audiences are ${repo.audiences
-        .map((audience) => `${audience.name}, who need ${audience.needs.join(", ")}`)
-        .join("; ")}.`,
-      citations: repo.audiences.flatMap((audience) => audience.sources),
-    };
-  }
-
-  if ((normalized.includes("campaign") || normalized.includes("run")) && repo.campaigns.length) {
-    return {
-      id: createId("assistant"),
-      role: "assistant",
-      text: `${repo.company.name || "This repo"} has campaign memory for ${repo.campaigns
-        .map((campaign) => `${campaign.name}: ${campaign.learnings}`)
-        .join(" ")}.`,
-      citations: repo.campaigns.flatMap((campaign) => campaign.sources),
-    };
-  }
-
-  return {
-    id: createId("assistant"),
-    role: "assistant",
-    text: "I found some context in the repo, but not enough structured Brand, Audience, and Messaging data to answer that fully yet.",
-    citations,
-  };
-}
-
-function generateContent(repo: RepoState, type: "social" | "email" | "concept") {
-  const audience = repo.audiences[0];
-  const product = repo.products[0];
-  const message = repo.messaging[0];
-
-  if (!repo.company.name || !audience || !product || !message) {
-    return "Add company, product, audience, and messaging context before generating content from the repo.";
-  }
-
-  const valueProp = message.valueProps[0] ?? message.positioning;
-
-  if (type === "email") {
-    return `Subject: ${valueProp}\n\nHi {{first_name}},\n\n${repo.company.name} helps ${audience.name.toLowerCase()} with ${product.name}.\n\n${message.positioning}\n\nWould it be useful to talk through whether this fits your current priorities?`;
-  }
-
-  if (type === "concept") {
-    return `Campaign concept: ${message.taglines[0] ?? product.name}\n\nAudience: ${audience.name}\n\nCore message: ${valueProp}\n\nContent pieces: social post, email, landing page draft, and follow-up note using the saved repo context.`;
-  }
-
-  return `${repo.company.name}\n\n${message.positioning}\n\n${message.taglines[0] ?? valueProp}`;
-}
-
 export default function Home() {
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => [createWorkspace()]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
@@ -523,33 +1184,81 @@ export default function Home() {
   const [settingsAccountName, setSettingsAccountName] = useState("");
   const [settingsStatus, setSettingsStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [settingsError, setSettingsError] = useState("");
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "dark";
-    const storedTheme = window.localStorage.getItem(themeStorageKey);
-    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
-  });
+  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [themePreferenceReady, setThemePreferenceReady] = useState(false);
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Local only");
   const [section, setSection] = useState<NavSection>("Home");
-  const [repoTab, setRepoTab] = useState<RepoKind>("Brand Guidelines");
+  const [repoTab, setRepoTab] = useState<RepoKind>("Brand Basics");
   const [companyDraft, setCompanyDraft] = useState(initialRepo.company);
+  const [brandBasicsStatus, setBrandBasicsStatus] = useState("Auto saved.");
+  const [colorsStatus, setColorsStatus] = useState("Auto saved.");
+  const [typographyStatus, setTypographyStatus] = useState("Auto saved.");
+  const [channelSeoStatus, setChannelSeoStatus] = useState("Auto saved.");
+  const [identityStatus, setIdentityStatus] = useState("Auto saved.");
+  const [voiceToneStatus, setVoiceToneStatus] = useState("Auto saved.");
+  const [messagingStatus, setMessagingStatus] = useState("Auto saved.");
   const [persistenceReady, setPersistenceReady] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  const [chatStatus, setChatStatus] = useState<"idle" | "thinking" | "generating-image">("idle");
   const [importRun, setImportRun] = useState<ImportRun | null>(null);
   const [importStatus, setImportStatus] = useState<"idle" | "scanning" | "ready" | "importing" | "error">("idle");
   const [importError, setImportError] = useState("");
   const [sectionScanUrl, setSectionScanUrl] = useState("");
   const [lastSectionScan, setLastSectionScan] = useState<{ tab: RepoKind; url: string } | null>(null);
+  const [repoNavExpanded, setRepoNavExpanded] = useState(true);
+  const [repoNavPreferenceReady, setRepoNavPreferenceReady] = useState(false);
+  const [identityExpanded, setIdentityExpanded] = useState(true);
+  const [identityField, setIdentityField] = useState<IdentityField>("logos");
+  const [markdownDrawerSection, setMarkdownDrawerSection] = useState<RepoKind | null>(null);
+  const [markdownDrawerOpen, setMarkdownDrawerOpen] = useState(false);
+  const [messagingImportDrawerOpen, setMessagingImportDrawerOpen] = useState(false);
+  const [messagingImportDrawerMounted, setMessagingImportDrawerMounted] = useState(false);
+  const [messagingImportDraft, setMessagingImportDraft] = useState("");
+  const [markdownImportSection, setMarkdownImportSection] = useState<RepoKind>("Messaging");
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
   const repo = activeWorkspace?.repo ?? initialRepo;
   const chatMessages = activeWorkspace?.chatMessages ?? createWelcomeChat();
-  const generationType = activeWorkspace?.generationType ?? "social";
-  const generatedDraft = activeWorkspace?.generatedDraft ?? "";
+  const hasChatConversation = chatMessages.some((message) => message.id !== "welcome");
+  const visibleAssets = repo.assets.filter((asset) => asset.metadata.includes("generated") || !isRepoSectionVisualAsset(asset));
+  const markdownDrawerContent = markdownDrawerSection ? generateSectionMarkdown(repo, markdownDrawerSection) : "";
+  const markdownDrawerFileName = markdownDrawerSection ? sectionMarkdownFileName(markdownDrawerSection) : "";
 
   useEffect(() => {
+    const themeTimer = window.setTimeout(() => {
+      const storedTheme = window.localStorage.getItem(themeStorageKey) ?? window.localStorage.getItem(legacyThemeStorageKey);
+      if (storedTheme === "light" || storedTheme === "dark") {
+        setTheme(storedTheme);
+      }
+      setThemePreferenceReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(themeTimer);
+  }, []);
+
+  useEffect(() => {
+    const repoNavTimer = window.setTimeout(() => {
+      const storedPreference = window.localStorage.getItem(repoNavStorageKey);
+      if (storedPreference === "collapsed") {
+        setRepoNavExpanded(false);
+      }
+      setRepoNavPreferenceReady(true);
+    }, 0);
+
+    return () => window.clearTimeout(repoNavTimer);
+  }, []);
+
+  useEffect(() => {
+    if (!themePreferenceReady) return;
     window.localStorage.setItem(themeStorageKey, theme);
-  }, [theme]);
+    window.localStorage.removeItem(legacyThemeStorageKey);
+  }, [theme, themePreferenceReady]);
+
+  useEffect(() => {
+    if (!repoNavPreferenceReady) return;
+    window.localStorage.setItem(repoNavStorageKey, repoNavExpanded ? "expanded" : "collapsed");
+  }, [repoNavExpanded, repoNavPreferenceReady]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -622,8 +1331,78 @@ export default function Home() {
 
   useEffect(() => {
     if (!persistenceReady) return;
-    window.localStorage.setItem(storageKey, JSON.stringify({ activeWorkspaceId: activeWorkspace?.id, workspaces }));
-  }, [activeWorkspace?.id, persistenceReady, workspaces]);
+    window.localStorage.setItem(storageKey, JSON.stringify({ activeWorkspaceId, workspaces }));
+  }, [activeWorkspaceId, persistenceReady, workspaces]);
+
+  useEffect(() => {
+    if (brandBasicsStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setBrandBasicsStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [brandBasicsStatus, repo.company.description, repo.company.name, repo.company.website, repo.brand.description]);
+
+  useEffect(() => {
+    if (messagingStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setMessagingStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [messagingStatus, repo.audiences, repo.messaging]);
+
+  useEffect(() => {
+    if (voiceToneStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setVoiceToneStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [repo.brand.approvedTerms, repo.brand.prohibitedTerms, repo.brand.rules, repo.brand.voice, voiceToneStatus]);
+
+  useEffect(() => {
+    if (colorsStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setColorsStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [colorsStatus, repo.colors]);
+
+  useEffect(() => {
+    if (typographyStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setTypographyStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [repo.typography, typographyStatus]);
+
+  useEffect(() => {
+    if (channelSeoStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setChannelSeoStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [channelSeoStatus, repo.channelSeo]);
+
+  useEffect(() => {
+    if (identityStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setIdentityStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [identityStatus, repo.identity]);
 
   useEffect(() => {
     if (!supabase || !currentUser || !persistenceReady || cloudHydrated) return;
@@ -649,9 +1428,18 @@ export default function Home() {
       const rows = (data ?? []) as WorkspaceRow[];
       if (rows.length) {
         const cloudWorkspaces = rows.map((row) => ({ ...row.data, id: row.id, name: row.name }));
-        const selectedWorkspace = cloudWorkspaces[0];
+        const localActiveWorkspaceId = activeWorkspaceId || getLocallyActiveWorkspaceId();
+        const selectedWorkspace =
+          cloudWorkspaces.find((workspace) => workspace.id === localActiveWorkspaceId) ?? cloudWorkspaces[0];
         setWorkspaces(cloudWorkspaces);
-        resetTransientWorkspaceState(selectedWorkspace);
+        setActiveWorkspaceId(selectedWorkspace.id);
+        window.localStorage.setItem(storageKey, JSON.stringify({ activeWorkspaceId: selectedWorkspace.id, workspaces: cloudWorkspaces }));
+        setCompanyDraft(selectedWorkspace.repo.company);
+        setImportRun(null);
+        setImportStatus("idle");
+        setImportError("");
+        setChatInput("");
+        setMarkdownDrawerSection(null);
         setSyncStatus("Synced to Supabase");
       } else {
         setSyncStatus("Ready to sync");
@@ -665,7 +1453,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [cloudHydrated, currentUser, persistenceReady]);
+  }, [activeWorkspaceId, cloudHydrated, currentUser, persistenceReady]);
 
   useEffect(() => {
     if (!supabase || !currentUser || !persistenceReady || !cloudHydrated) return;
@@ -706,12 +1494,247 @@ export default function Home() {
     updateActiveWorkspace((workspace) => ({ ...workspace, chatMessages: updater(workspace.chatMessages) }));
   }
 
-  function updateGeneratedDraft(value: string) {
-    updateActiveWorkspace((workspace) => ({ ...workspace, generatedDraft: value }));
+  function startNewChat() {
+    setChatInput("");
+    setChatStatus("idle");
+    updateChatMessages(() => createWelcomeChat());
   }
 
-  function updateGenerationType(value: "social" | "email" | "concept") {
-    updateActiveWorkspace((workspace) => ({ ...workspace, generationType: value }));
+  useEffect(() => {
+    if (!activeWorkspace?.id || !persistenceReady) return;
+    const activeId = activeWorkspace.id;
+
+    const cleanupTimer = window.setTimeout(() => {
+      setWorkspaces((current) =>
+        current.map((workspace) => {
+          if (workspace.id !== activeId) return workspace;
+
+          const nextMessaging = workspace.repo.messaging.filter(
+            (message) => !message.sources.some((source) => source.label === chatSavedMessagingSourceLabel),
+          );
+
+          if (nextMessaging.length === workspace.repo.messaging.length) return workspace;
+
+          return {
+            ...workspace,
+            repo: {
+              ...workspace.repo,
+              messaging: nextMessaging,
+              activity: ["Undid chat answer save", ...workspace.repo.activity],
+            },
+          };
+        }),
+      );
+    }, 0);
+
+    return () => window.clearTimeout(cleanupTimer);
+  }, [activeWorkspace?.id, persistenceReady, repo.messaging]);
+
+  function openMarkdownDrawer(tab: RepoKind) {
+    setMarkdownDrawerSection(tab);
+    setMarkdownDrawerOpen(false);
+    window.setTimeout(() => {
+      setMarkdownDrawerOpen(true);
+    }, 0);
+  }
+
+  function closeMarkdownDrawer() {
+    setMarkdownDrawerOpen(false);
+    window.setTimeout(() => {
+      setMarkdownDrawerSection(null);
+    }, drawerAnimationMs);
+  }
+
+  function openSectionMarkdownImportDrawer(tab: RepoKind) {
+    setMarkdownImportSection(tab);
+    setMessagingImportDraft("");
+    setMessagingImportDrawerMounted(true);
+    setMessagingImportDrawerOpen(false);
+    window.setTimeout(() => {
+      setMessagingImportDrawerOpen(true);
+    }, 0);
+  }
+
+  function closeMessagingImportDrawer() {
+    setMessagingImportDrawerOpen(false);
+    window.setTimeout(() => {
+      setMessagingImportDrawerMounted(false);
+    }, drawerAnimationMs);
+  }
+
+  function saveSectionMarkdownImport() {
+    if (markdownImportSection === "Identity") {
+      const parsed = parseIdentityMarkdown(messagingImportDraft);
+      const hasParsedContent = Object.values(parsed).some(Boolean);
+
+      if (!hasParsedContent) return;
+
+      setIdentityStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        identity: {
+          ...getRepoIdentity(current),
+          ...Object.fromEntries(Object.entries(parsed).filter(([, value]) => value)),
+        },
+        activity: ["Imported Identity Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      setRepoTab("Identity");
+      return;
+    }
+
+    if (markdownImportSection === "Colors") {
+      const parsed = parseColorsMarkdown(messagingImportDraft);
+      const hasParsedContent = parsed.colors.length || parsed.rules;
+
+      if (!hasParsedContent) return;
+
+      setColorsStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        colors: parsed.colors.length ? parsed.colors : getRepoColors(current),
+        colorRules: parsed.rules || getRepoColorRules(current),
+        activity: ["Imported Colors Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      setRepoTab("Colors");
+      return;
+    }
+
+    if (markdownImportSection === "Voice & Tone") {
+      const parsed = parseVoiceToneMarkdown(messagingImportDraft);
+      const hasParsedContent =
+        parsed.voiceCharacteristics.length ||
+        parsed.writingRules.length ||
+        parsed.wordsToUse.length ||
+        parsed.wordsToAvoid.length;
+
+      if (!hasParsedContent) return;
+
+      setVoiceToneStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        brand: {
+          ...current.brand,
+          voice: parsed.voiceCharacteristics.length ? parsed.voiceCharacteristics : current.brand.voice,
+          rules: parsed.writingRules.length ? parsed.writingRules : current.brand.rules,
+          approvedTerms: parsed.wordsToUse.length ? parsed.wordsToUse : current.brand.approvedTerms,
+          prohibitedTerms: parsed.wordsToAvoid.length ? parsed.wordsToAvoid : current.brand.prohibitedTerms,
+        },
+        activity: ["Imported Voice & Tone Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      setRepoTab("Voice & Tone");
+      return;
+    }
+
+    if (markdownImportSection === "Typography") {
+      const parsed = parseTypographyMarkdown(messagingImportDraft);
+      const hasParsedContent = parsed.fontNames.length || parsed.weights.length || parsed.usageRules;
+
+      if (!hasParsedContent) return;
+
+      setTypographyStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        typography: {
+          ...getRepoTypography(current),
+          fontNames: parsed.fontNames.length ? parsed.fontNames : getRepoTypography(current).fontNames,
+          weights: parsed.weights.length ? parsed.weights : getRepoTypography(current).weights,
+          usageRules: parsed.usageRules || getRepoTypography(current).usageRules,
+        },
+        activity: ["Imported Typography Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      setRepoTab("Typography");
+      return;
+    }
+
+    if (markdownImportSection === "Channel SEO") {
+      const parsed = parseChannelSeoMarkdown(messagingImportDraft);
+      const hasParsedContent = Object.values(parsed).some(Boolean);
+
+      if (!hasParsedContent) return;
+
+      setChannelSeoStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        channelSeo: {
+          ...getRepoChannelSeo(current),
+          ...Object.fromEntries(Object.entries(parsed).filter(([, value]) => value)),
+        },
+        activity: ["Imported Channel SEO Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      setRepoTab("Channel SEO");
+      return;
+    }
+
+    if (markdownImportSection !== "Messaging") {
+      addSectionMarkdown(markdownImportSection, messagingImportDraft);
+      closeMessagingImportDrawer();
+      setRepoTab(markdownImportSection);
+      return;
+    }
+
+    const parsed = parseMessagingMarkdown(messagingImportDraft);
+    const hasParsedContent =
+      parsed.primaryValueProposition ||
+      parsed.keyMessages.length ||
+      parsed.targetCustomer ||
+      parsed.mainCustomerProblem ||
+      parsed.keyDifferentiators.length ||
+      parsed.tagline;
+
+    if (!hasParsedContent) return;
+
+    setMessagingStatus("Saving...");
+    updateRepo((current) => {
+      const currentMessage = current.messaging[0];
+      const message: Messaging = currentMessage ?? {
+        id: createId("message-md-import"),
+        positioning: "",
+        valueProps: [],
+        taglines: [],
+        keyMessages: [],
+        proofPoints: [],
+        claims: [],
+        sources: [],
+      };
+      const currentAudience = current.audiences[0];
+      const audience: Audience = currentAudience ?? {
+        id: createId("audience-md-import"),
+        name: "",
+        description: "",
+        painPoints: [],
+        needs: [],
+        messaging: [],
+        channels: [],
+        sources: [],
+      };
+      const nextMessage = {
+        ...message,
+        positioning: parsed.primaryValueProposition || message.positioning,
+        valueProps: parsed.primaryValueProposition ? [parsed.primaryValueProposition] : message.valueProps,
+        keyMessages: parsed.keyMessages.length ? parsed.keyMessages : message.keyMessages,
+        proofPoints: parsed.keyDifferentiators.length ? parsed.keyDifferentiators : message.proofPoints,
+        taglines: parsed.tagline ? [parsed.tagline] : message.taglines,
+      };
+      const nextAudience = {
+        ...audience,
+        name: parsed.targetCustomer || audience.name,
+        painPoints: parsed.mainCustomerProblem ? [parsed.mainCustomerProblem] : audience.painPoints,
+      };
+
+      return {
+        ...current,
+        audiences: currentAudience ? [nextAudience, ...current.audiences.slice(1)] : [nextAudience, ...current.audiences],
+        messaging: currentMessage ? [nextMessage, ...current.messaging.slice(1)] : [nextMessage, ...current.messaging],
+        activity: ["Imported Messaging Markdown", ...current.activity],
+      };
+    });
+    closeMessagingImportDrawer();
+    setRepoTab("Messaging");
   }
 
   function addWorkspace() {
@@ -722,24 +1745,35 @@ export default function Home() {
     setImportRun(null);
     setImportStatus("idle");
     setImportError("");
+    setMarkdownDrawerOpen(false);
+    setMarkdownDrawerSection(null);
+    setMessagingImportDrawerOpen(false);
+    setMessagingImportDrawerMounted(false);
     setSection("Home");
-    setRepoTab("Brand Guidelines");
+    setRepoTab("Brand Basics");
   }
 
-  function resetTransientWorkspaceState(nextWorkspace: WorkspaceState) {
+  function resetTransientWorkspaceState(nextWorkspace: WorkspaceState, availableWorkspaces = workspaces) {
     setActiveWorkspaceId(nextWorkspace.id);
+    if (persistenceReady) {
+      window.localStorage.setItem(storageKey, JSON.stringify({ activeWorkspaceId: nextWorkspace.id, workspaces: availableWorkspaces }));
+    }
     setCompanyDraft(nextWorkspace.repo.company);
     setImportRun(null);
     setImportStatus("idle");
     setImportError("");
     setChatInput("");
+    setMarkdownDrawerOpen(false);
+    setMarkdownDrawerSection(null);
+    setMessagingImportDrawerOpen(false);
+    setMessagingImportDrawerMounted(false);
   }
 
   function activateWorkspace(workspaceId: string) {
     const nextWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
     if (!nextWorkspace) return;
 
-    resetTransientWorkspaceState(nextWorkspace);
+    resetTransientWorkspaceState(nextWorkspace, nextWorkspaces);
   }
 
   function handleRepoSelection(workspaceId: string) {
@@ -749,27 +1783,6 @@ export default function Home() {
     }
 
     activateWorkspace(workspaceId);
-  }
-
-  function deleteActiveWorkspace() {
-    if (!activeWorkspace) return;
-
-    const confirmed = window.confirm(`Delete "${activeWorkspace.name}"? This removes this repo from this prototype.`);
-    if (!confirmed) return;
-
-    const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== activeWorkspace.id);
-    const nextWorkspaces = remainingWorkspaces.length ? remainingWorkspaces : [createWorkspace()];
-    const nextWorkspace = nextWorkspaces[0];
-
-    setWorkspaces(nextWorkspaces);
-    if (supabase && currentUser) {
-      supabase.from("brandhub_workspaces").delete().eq("id", activeWorkspace.id).eq("user_id", currentUser.id).then(() => {
-        setSyncStatus("Synced to Supabase");
-      });
-    }
-    resetTransientWorkspaceState(nextWorkspace);
-    setSection("Repo");
-    setRepoTab("Brand Guidelines");
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -879,11 +1892,7 @@ export default function Home() {
       <main className="auth-page" data-theme={theme}>
         <section className="auth-card">
           <div className="brand-mark auth-brand">
-            <span>BR</span>
-            <div>
-              <strong>BrandRepo</strong>
-              <small>Marketing Repo</small>
-            </div>
+            <BrandRepoLogo />
           </div>
           <p className="eyebrow">Checking session</p>
           <h1>Loading your repo.</h1>
@@ -897,11 +1906,7 @@ export default function Home() {
       <main className="auth-page" data-theme={theme}>
         <section className="auth-card">
           <div className="brand-mark auth-brand">
-            <span>BR</span>
-            <div>
-              <strong>BrandRepo</strong>
-              <small>Marketing Repo</small>
-            </div>
+            <BrandRepoLogo />
           </div>
           <div>
             <p className="eyebrow">{authMode === "sign-in" ? "Sign in" : "Create account"}</p>
@@ -964,7 +1969,6 @@ export default function Home() {
     );
   }
 
-  const canGenerate = Boolean(repo.company.name && repo.products[0] && repo.audiences[0] && repo.messaging[0]);
   const importTextLength = importRun?.sources.reduce((total, source) => total + source.text.length, 0) ?? 0;
   const importHasLowText = Boolean(importRun && importTextLength < 500);
   const isNewWorkspace =
@@ -981,6 +1985,194 @@ export default function Home() {
       ...current,
       company: companyDraft,
       activity: [`Updated company context for ${companyDraft.name}`, ...current.activity],
+    }));
+  }
+
+  function updateBrandBasics(field: "name" | "website" | "description" | "about", value: string) {
+    setBrandBasicsStatus("Saving...");
+    if (field === "about") {
+      updateRepo((current) => ({
+        ...current,
+        brand: {
+          ...current.brand,
+          description: value,
+        },
+      }));
+      return;
+    }
+
+    setCompanyDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+    updateRepo((current) => ({
+      ...current,
+      company: {
+        ...current.company,
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateMessagingField(
+    field: "primaryValueProposition" | "keyMessages" | "targetCustomer" | "mainCustomerProblem" | "keyDifferentiators" | "tagline",
+    value: string,
+  ) {
+    setMessagingStatus("Saving...");
+    updateRepo((current) => {
+      const currentMessage = current.messaging[0];
+      const message: Messaging = currentMessage ?? {
+        id: createId("message-manual"),
+        positioning: "",
+        valueProps: [],
+        taglines: [],
+        keyMessages: [],
+        proofPoints: [],
+        claims: [],
+        sources: [],
+      };
+      const currentAudience = current.audiences[0];
+      const audience: Audience = currentAudience ?? {
+        id: createId("audience-manual"),
+        name: "",
+        description: "",
+        painPoints: [],
+        needs: [],
+        messaging: [],
+        channels: [],
+        sources: [],
+      };
+      const values = value
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (field === "targetCustomer" || field === "mainCustomerProblem") {
+        const nextAudience = {
+          ...audience,
+          name: field === "targetCustomer" ? value : audience.name,
+          painPoints: field === "mainCustomerProblem" ? (value.trim() ? [value] : []) : audience.painPoints,
+        };
+        return {
+          ...current,
+          audiences: currentAudience ? [nextAudience, ...current.audiences.slice(1)] : [nextAudience, ...current.audiences],
+        };
+      }
+
+      const nextMessage = {
+        ...message,
+        positioning: field === "primaryValueProposition" ? value : message.positioning,
+        valueProps: field === "primaryValueProposition" ? (value.trim() ? [value] : []) : message.valueProps,
+        keyMessages: field === "keyMessages" ? values.slice(0, 5) : message.keyMessages,
+        proofPoints: field === "keyDifferentiators" ? values : message.proofPoints,
+        taglines: field === "tagline" ? (value.trim() ? [value] : []) : message.taglines,
+      };
+
+      return {
+        ...current,
+        messaging: currentMessage ? [nextMessage, ...current.messaging.slice(1)] : [nextMessage, ...current.messaging],
+      };
+    });
+  }
+
+  function updateVoiceToneField(
+    field: "voiceCharacteristics" | "writingRules" | "wordsToUse" | "wordsToAvoid",
+    value: string,
+  ) {
+    setVoiceToneStatus("Saving...");
+    const values = value
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    updateRepo((current) => ({
+      ...current,
+      brand: {
+        ...current.brand,
+        voice: field === "voiceCharacteristics" ? values : current.brand.voice,
+        rules: field === "writingRules" ? values : current.brand.rules,
+        approvedTerms: field === "wordsToUse" ? values : current.brand.approvedTerms,
+        prohibitedTerms: field === "wordsToAvoid" ? values : current.brand.prohibitedTerms,
+      },
+    }));
+  }
+
+  function updateTypographyField(field: "fontNames" | "weights" | "usageRules", value: string) {
+    setTypographyStatus("Saving...");
+    const values = value
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    updateRepo((current) => ({
+      ...current,
+      typography: {
+        ...getRepoTypography(current),
+        fontNames: field === "fontNames" ? values : getRepoTypography(current).fontNames,
+        weights: field === "weights" ? values : getRepoTypography(current).weights,
+        usageRules: field === "usageRules" ? value : getRepoTypography(current).usageRules,
+      },
+    }));
+  }
+
+  function updateChannelSeoField(field: keyof ChannelSeoSettings, value: string) {
+    setChannelSeoStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      channelSeo: {
+        ...getRepoChannelSeo(current),
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateIdentityField(field: IdentityField, value: string) {
+    setIdentityStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      identity: {
+        ...getRepoIdentity(current),
+        [field]: value,
+      },
+    }));
+  }
+
+  function addColorToken() {
+    setColorsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      colors: [...getRepoColors(current), { id: createId("color"), name: "", hex: "", description: "" }],
+    }));
+  }
+
+  function updateColorToken(colorId: string, field: "name" | "hex" | "description", value: string) {
+    setColorsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      colors: getRepoColors(current).map((color) =>
+        color.id === colorId
+          ? {
+              ...color,
+              [field]: field === "hex" ? normalizeHexColor(value) : value,
+            }
+          : color,
+      ),
+    }));
+  }
+
+  function updateColorRules(value: string) {
+    setColorsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      colorRules: value,
+    }));
+  }
+
+  function deleteColorToken(colorId: string) {
+    setColorsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      colors: getRepoColors(current).filter((color) => color.id !== colorId),
     }));
   }
 
@@ -1148,7 +2340,7 @@ export default function Home() {
     }
   }
 
-  async function handleUpload(files: FileList | null, nextSection?: NavSection, options?: { repoTab?: RepoKind }) {
+  async function handleUpload(files: FileList | null, nextSection?: NavSection, options?: { repoTab?: RepoKind; assetTag?: string }) {
     if (!files?.length) return;
 
     try {
@@ -1167,6 +2359,7 @@ export default function Home() {
         const assetId = createId("asset");
         const metadata = ["uploaded", assetType.toLowerCase(), "source context"];
         if (options?.repoTab) metadata.push(options.repoTab.toLowerCase());
+        if (options?.assetTag) metadata.push(options.assetTag.toLowerCase());
         let previewUrl = assetType === "Image" ? await readFileAsDataUrl(file) : undefined;
         let storagePath: string | undefined;
 
@@ -1192,7 +2385,7 @@ export default function Home() {
           url: previewUrl,
           storagePath,
           description: options?.repoTab
-            ? `${options.repoTab} asset uploaded directly to this repo section.`
+            ? `${options.assetTag ? `${options.assetTag} ` : ""}${options.repoTab} asset uploaded directly to this repo section.`
             : "Uploaded context ready for BrandRepo analysis. Prototype summary generated from filename and file type.",
           metadata,
           uploadedAt: new Date().toISOString().slice(0, 10),
@@ -1302,83 +2495,136 @@ export default function Home() {
     }));
   }
 
-  function sendChat(event: FormEvent<HTMLFormElement>) {
+  function updateAssetDetails(assetId: string, field: "name" | "description", value: string) {
+    setIdentityStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      assets: current.assets.map((asset) => (asset.id === assetId ? { ...asset, [field]: value } : asset)),
+    }));
+  }
+
+  async function saveGeneratedChatImage(message: ChatMessage) {
+    if (!message.generatedImage || message.generatedImage.saved) return;
+
+    const assetId = createId("generated-image");
+    const source: Source = { id: createId("source-generated-image"), label: "Generated in BrandRepo Chat", type: "generated" };
+    let imageUrl = message.generatedImage.dataUrl;
+    let storagePath: string | undefined;
+
+    try {
+      if (supabase && currentUser && activeWorkspace) {
+        setSyncStatus("Saving generated image...");
+        const blob = await fetch(message.generatedImage.dataUrl).then((response) => response.blob());
+        storagePath = `${currentUser.id}/${activeWorkspace.id}/${assetId}.png`;
+        const { error } = await supabase.storage.from(assetBucket).upload(storagePath, blob, {
+          cacheControl: "3600",
+          contentType: "image/png",
+          upsert: false,
+        });
+
+        if (error) {
+          throw new Error(getStorageUploadErrorMessage("generated-image.png", error.message));
+        }
+
+        const { data } = supabase.storage.from(assetBucket).getPublicUrl(storagePath);
+        imageUrl = data.publicUrl;
+      }
+
+      const generatedAsset: Asset = {
+        id: assetId,
+        name: "Generated ad mockup.png",
+        type: "Image",
+        url: imageUrl,
+        storagePath,
+        description: message.generatedImage.prompt,
+        metadata: ["generated", "chat", "image", "ad mockup"],
+        uploadedAt: new Date().toISOString().slice(0, 10),
+        sources: [source],
+      };
+
+      updateRepo((current) => ({
+        ...current,
+        assets: [generatedAsset, ...current.assets],
+        activity: ["Saved generated image from Chat", ...current.activity],
+      }));
+      updateChatMessages((current) =>
+        current.map((item) =>
+          item.id === message.id && item.generatedImage
+            ? { ...item, generatedImage: { ...item.generatedImage, saved: true } }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Unable to save generated image.");
+      setSyncStatus("Save failed");
+    }
+  }
+
+  async function sendChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!chatInput.trim()) return;
+    const prompt = chatInput.trim();
+    if (!prompt || chatStatus !== "idle") return;
     const userMessage: ChatMessage = { id: createId("user"), role: "user", text: chatInput.trim() };
-    const assistantMessage = answerFromRepo(repo, chatInput);
-    updateChatMessages((current) => [...current, userMessage, assistantMessage]);
+    const history = chatMessages.filter((message) => message.id !== "welcome").slice(-8);
+    updateChatMessages((current) => [...current.filter((message) => message.id !== "welcome"), userMessage]);
     setChatInput("");
-  }
+    const isImageRequest = isImageGenerationPrompt(prompt);
+    setChatStatus(isImageRequest ? "generating-image" : "thinking");
 
-  function runGeneration() {
-    updateGeneratedDraft(generateContent(repo, generationType));
-  }
+    try {
+      const response = await fetch(isImageRequest ? "/api/chat-image" : "/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          messages: history,
+          repoContext: generateRepoMarkdownContext(repo),
+          referenceAssets: isImageRequest ? getImageGenerationReferences(repo) : [],
+        }),
+      });
+      const payload = (await response.json()) as { answer?: string; imageDataUrl?: string; revisedPrompt?: string; error?: string };
 
-  function saveGeneratedContent() {
-    if (!generatedDraft.trim()) return;
-    const source: Source = {
-      id: createId("source-generated"),
-      label: `${generationType} draft from BrandRepo Chat`,
-      type: "generated",
-    };
-    const campaign: Campaign = {
-      id: createId("campaign"),
-      name: generationType === "concept" ? "Generated Campaign Concept" : "Generated Content Draft",
-      goal: "Turn BrandRepo context into reusable marketing work.",
-      audience: repo.audiences[0]?.name ?? "Unassigned",
-      brief: "Generated in Chat using saved Brand, Product, Audience, Messaging, and Campaign context.",
-      messaging: repo.messaging[0] ? [repo.messaging[0].positioning, ...repo.messaging[0].valueProps.slice(0, 2)] : [],
-      content: [generatedDraft],
-      assets: [],
-      status: "Draft",
-      results: "Not yet launched.",
-      learnings: "Saved as new institutional marketing memory.",
-      sources: [source, repo.brand.sources[0], repo.messaging[0]?.sources[0]].filter(Boolean) as Source[],
-    };
-    updateRepo((current) => ({
-      ...current,
-      campaigns: [campaign, ...current.campaigns],
-      activity: [`Saved generated ${generationType} content to Campaigns`, ...current.activity],
-    }));
-    updateGeneratedDraft("");
-    setSection("Campaigns");
-  }
+      if (!response.ok || !payload.answer) {
+        throw new Error(payload.error ?? "Unable to answer from the repo.");
+      }
 
-  function saveChatAnswer(message: ChatMessage) {
-    const source: Source = { id: createId("source-chat"), label: "Chat answer saved to Messaging", type: "generated" };
-    const messaging: Messaging = {
-      id: createId("message"),
-      positioning: message.text,
-      valueProps: ["Saved insight from a repo-grounded BrandRepo answer."],
-      taglines: [],
-      keyMessages: [message.text],
-      proofPoints: message.citations?.map(sourceText) ?? [],
-      claims: [],
-      sources: [source, ...(message.citations ?? [])],
-    };
-    updateRepo((current) => ({
-      ...current,
-      messaging: [messaging, ...current.messaging],
-      activity: ["Saved chat answer to Messaging", ...current.activity],
-    }));
-    updateChatMessages((current) => current.map((item) => (item.id === message.id ? { ...item, saved: true } : item)));
+      const assistantMessage: ChatMessage = {
+        id: createId("assistant"),
+        role: "assistant",
+        text: payload.answer,
+        generatedImage: payload.imageDataUrl
+          ? {
+              dataUrl: payload.imageDataUrl,
+              prompt: payload.revisedPrompt ?? prompt,
+            }
+          : undefined,
+        citations: payload.imageDataUrl ? [] : repo.brand.sources.slice(0, 3),
+      };
+      updateChatMessages((current) => [...current, assistantMessage]);
+    } catch (error) {
+      const assistantMessage: ChatMessage = {
+        id: createId("assistant-error"),
+        role: "assistant",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to answer from the repo. Check the server logs and OpenAI API configuration.",
+      };
+      updateChatMessages((current) => [...current, assistantMessage]);
+    } finally {
+      setChatStatus("idle");
+    }
   }
 
   return (
     <main className="app-shell" data-theme={theme}>
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand-mark">
-          <span>BR</span>
-          <div>
-            <strong>BrandRepo</strong>
-            <small>Marketing Repo</small>
-          </div>
+          <BrandRepoLogo />
         </div>
         <div className="workspace-switcher">
           <label>
-            Repo
-            <select value={activeWorkspace?.id ?? ""} onChange={(event) => handleRepoSelection(event.target.value)}>
+            <select aria-label="Select repo" value={activeWorkspace?.id ?? ""} onChange={(event) => handleRepoSelection(event.target.value)}>
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>
                   {workspace.name}
@@ -1391,20 +2637,86 @@ export default function Home() {
         <nav>
           {navItems.map((item) => (
             <div className="nav-group" key={item}>
-              <button className={section === item ? "active" : ""} onClick={() => setSection(item)}>
-                {item}
-              </button>
-              {item === "Repo" && section === "Repo" && !isNewWorkspace && (
+              <div className="nav-row">
+                <button
+                  aria-expanded={item === "Repo" ? repoNavExpanded : undefined}
+                  className={section === item ? "active" : ""}
+                  onClick={() => {
+                    if (item === "Repo") {
+                      if (section === "Repo") {
+                        setRepoNavExpanded((current) => !current);
+                      } else {
+                        setSection("Repo");
+                        setRepoNavExpanded(true);
+                      }
+                      return;
+                    }
+                    setSection(item);
+                  }}
+                >
+                  {item}
+                </button>
+                {item === "Chat" ? (
+                  <button
+                    aria-label="New chat"
+                    className="nav-icon-button"
+                    disabled={chatStatus !== "idle"}
+                    onClick={startNewChat}
+                    title="New chat"
+                    type="button"
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+              {item === "Repo" && section === "Repo" && repoNavExpanded && !isNewWorkspace && (
                 <div className="repo-subnav">
-                  {repoTabs.map((repoSection) => (
-                    <button
-                      className={repoTab === repoSection ? "active" : ""}
-                      key={repoSection}
-                      onClick={() => setRepoTab(repoSection)}
-                    >
-                      {repoSection}
-                    </button>
-                  ))}
+                  {repoTabs.map((repoSection) => {
+                    if (repoSection === "Identity") {
+                      return (
+                        <div className="repo-subnav-group" key={repoSection}>
+                          <button
+                            className={repoTab === repoSection ? "active" : ""}
+                            onClick={() => {
+                              setRepoTab(repoSection);
+                              setIdentityExpanded((current) => !current);
+                            }}
+                            type="button"
+                          >
+                            Identity
+                          </button>
+                          {identityExpanded && repoTab === "Identity" ? (
+                            <div className="identity-rail-subnav">
+                              {identitySections.map((identitySection) => (
+                                <button
+                                  className={identityField === identitySection.field ? "active" : ""}
+                                  key={identitySection.field}
+                                  onClick={() => {
+                                    setRepoTab("Identity");
+                                    setIdentityField(identitySection.field);
+                                  }}
+                                  type="button"
+                                >
+                                  {identitySection.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        className={repoTab === repoSection ? "active" : ""}
+                        key={repoSection}
+                        onClick={() => setRepoTab(repoSection)}
+                        type="button"
+                      >
+                        {repoSection}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1495,115 +2807,108 @@ export default function Home() {
 
         {section === "Repo" && (
           <div className="repo-view">
+            <header className="topbar repo-upload-header">
+              <button className="secondary" onClick={() => openSectionMarkdownImportDrawer(repoTab)} type="button">
+                Upload .md
+              </button>
+            </header>
             {isNewWorkspace ? (
-              <>
-                <header className="topbar">
-                  <div>
-                    <p>No website added</p>
-                    <h1>New repo</h1>
-                  </div>
-                  <button className="danger-secondary" onClick={deleteActiveWorkspace} type="button">
-                    Delete repo
-                  </button>
-                </header>
-                <EmptyState
-                  title="Set up this repo first"
-                  description="Add a company name and website on Home before reviewing brand guideline sections."
-                />
-              </>
-            ) : (
-              <>
-                <header className="topbar">
-                  <div>
-                    <p>{repo.company.website || "No website added"}</p>
-                    <h1>{repo.company.name || "New repo"}</h1>
-                  </div>
-                  <button className="danger-secondary" onClick={deleteActiveWorkspace} type="button">
-                    Delete repo
-                  </button>
-                </header>
-              </>
-            )}
+              <EmptyState
+                title="Set up this repo first"
+                description="Add a company name and website on Home before reviewing brand guideline sections."
+              />
+            ) : null}
             {importError && <p className="import-error">{importError}</p>}
             {!isNewWorkspace && (
               <RepoPanel
+                channelSeoStatus={channelSeoStatus}
+                colorsStatus={colorsStatus}
                 onScanSectionUrl={scanSectionUrl}
+                onUpdateBrandBasics={updateBrandBasics}
+                onAddColorToken={addColorToken}
+                onDeleteColorToken={deleteColorToken}
                 onDeleteAsset={deleteAsset}
-                onUploadSectionAssets={(files, tab) => void handleUpload(files, undefined, { repoTab: tab })}
+                onUpdateAssetDetails={updateAssetDetails}
+                onUploadSectionAssets={(files, tab, assetTag) => void handleUpload(files, undefined, { repoTab: tab, assetTag })}
                 onAddSectionMarkdown={addSectionMarkdown}
                 onDeleteSectionMarkdown={deleteSectionMarkdown}
                 onUpdateSectionMarkdown={updateSectionMarkdown}
+                brandBasicsStatus={brandBasicsStatus}
+                identityStatus={identityStatus}
+                identityField={identityField}
                 lastSectionScan={lastSectionScan}
+                messagingStatus={messagingStatus}
+                onViewMarkdown={openMarkdownDrawer}
+                onUpdateChannelSeoField={updateChannelSeoField}
+                onUpdateIdentityField={updateIdentityField}
+                onUpdateTypographyField={updateTypographyField}
+                onUpdateColorRules={updateColorRules}
+                onUpdateColorToken={updateColorToken}
+                onUpdateMessagingField={updateMessagingField}
+                onUpdateVoiceToneField={updateVoiceToneField}
                 repo={repo}
                 scanningUrl={sectionScanUrl}
                 tab={repoTab}
+                typographyStatus={typographyStatus}
+                voiceToneStatus={voiceToneStatus}
               />
             )}
           </div>
         )}
 
         {section === "Chat" && (
-          <div className="chat-layout">
-            <section className="chat-panel">
-              <div className="section-heading">
-                <h2>Repo-grounded chat</h2>
-                <span>{repo.assets.length} sources available</span>
+          <section className={`chat-layout ${hasChatConversation ? "has-conversation" : "is-empty"}`}>
+            {!hasChatConversation ? (
+              <div className="chat-empty-state">
+                <h1>Ready when you are.</h1>
               </div>
+            ) : (
               <div className="messages">
-                {chatMessages.map((message) => (
+                {chatMessages.filter((message) => message.id !== "welcome").map((message) => (
                   <article className={message.role} key={message.id}>
                     <p>{message.text}</p>
-                    {message.citations?.length ? (
+                    {message.generatedImage ? (
+                      <div className="chat-generated-image">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt="Generated BrandRepo mockup" src={message.generatedImage.dataUrl} />
+                        <button
+                          className="small-action"
+                          disabled={message.generatedImage.saved}
+                          onClick={() => void saveGeneratedChatImage(message)}
+                          type="button"
+                        >
+                          {message.generatedImage.saved ? "Saved to Assets" : "Save to Assets"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {message.citations?.length && !message.generatedImage ? (
                       <div className="citations">
                         {message.citations.map((source) => (
                           <span key={`${message.id}-${source.id}`}>{source.label}</span>
                         ))}
                       </div>
                     ) : null}
-                    {message.role === "assistant" && message.id !== "welcome" && (
-                      <button className="small-action" disabled={message.saved} onClick={() => saveChatAnswer(message)}>
-                        {message.saved ? "Saved" : "Save to Messaging"}
-                      </button>
-                    )}
                   </article>
                 ))}
+                {chatStatus !== "idle" ? (
+                  <article className="assistant">
+                    <p>{chatStatus === "generating-image" ? "Generating image..." : "Thinking..."}</p>
+                  </article>
+                ) : null}
               </div>
-              <form className="chat-input" onSubmit={sendChat}>
-                <input
-                  onChange={(event) => setChatInput(event.target.value)}
-                  placeholder="Ask about positioning, audiences, or campaign history"
-                  value={chatInput}
-                />
-                <button type="submit">Ask</button>
-              </form>
-            </section>
-            <section className="generation-panel">
-              <div className="section-heading">
-                <h2>Generate content</h2>
-              </div>
-              <div className="segmented">
-                <button className={generationType === "social" ? "active" : ""} onClick={() => updateGenerationType("social")}>
-                  Social post
-                </button>
-                <button className={generationType === "email" ? "active" : ""} onClick={() => updateGenerationType("email")}>
-                  Email
-                </button>
-                <button className={generationType === "concept" ? "active" : ""} onClick={() => updateGenerationType("concept")}>
-                  Campaign concept
-                </button>
-              </div>
-              <button disabled={!canGenerate} onClick={runGeneration}>Generate from repo</button>
-              <textarea
-                aria-label="Generated content draft"
-                onChange={(event) => updateGeneratedDraft(event.target.value)}
-                placeholder={canGenerate ? "Generated draft appears here" : "Add company, product, audience, and messaging context before generating content."}
-                value={generatedDraft}
+            )}
+            <form className="chat-input" onSubmit={sendChat}>
+              <input
+                disabled={chatStatus !== "idle"}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="Ask BrandRepo about your brand"
+                value={chatInput}
               />
-              <button disabled={!generatedDraft.trim()} onClick={saveGeneratedContent}>
-                Save to BrandRepo
+              <button disabled={!chatInput.trim() || chatStatus !== "idle"} type="submit">
+                {chatStatus === "generating-image" ? "..." : chatStatus === "thinking" ? "..." : "Ask"}
               </button>
-            </section>
-          </div>
+            </form>
+          </section>
         )}
 
         {section === "Campaigns" && (
@@ -1655,7 +2960,7 @@ export default function Home() {
               </label>
             </section>
             <section className="asset-grid">
-              {repo.assets.length ? repo.assets.map((asset) => (
+              {visibleAssets.length ? visibleAssets.map((asset) => (
                 <AssetCard asset={asset} key={asset.id} onDelete={deleteAsset} />
               )) : <EmptyState title="No assets yet" description="Uploaded brand guides, decks, documents, images, and other source material will appear here." />}
             </section>
@@ -1752,32 +3057,97 @@ export default function Home() {
           </section>
         )}
       </section>
+      {markdownDrawerSection ? (
+        <MarkdownDrawer
+          fileName={markdownDrawerFileName}
+          isOpen={markdownDrawerOpen}
+          markdown={markdownDrawerContent}
+          onClose={closeMarkdownDrawer}
+          section={markdownDrawerSection}
+        />
+      ) : null}
+      {messagingImportDrawerMounted ? (
+        <SectionMarkdownImportDrawer
+          isOpen={messagingImportDrawerOpen}
+          markdown={messagingImportDraft}
+          onChange={setMessagingImportDraft}
+          onClose={closeMessagingImportDrawer}
+          onSave={saveSectionMarkdownImport}
+          section={markdownImportSection}
+        />
+      ) : null}
     </main>
   );
 }
 
 function RepoPanel({
+  brandBasicsStatus,
+  channelSeoStatus,
+  colorsStatus,
+  identityField,
+  identityStatus,
   lastSectionScan,
+  messagingStatus,
+  onAddColorToken,
   onAddSectionMarkdown,
   onDeleteAsset,
+  onDeleteColorToken,
   onDeleteSectionMarkdown,
   onScanSectionUrl,
+  onUpdateBrandBasics,
+  onUpdateAssetDetails,
+  onUpdateChannelSeoField,
+  onUpdateColorRules,
+  onUpdateColorToken,
+  onUpdateIdentityField,
+  onUpdateMessagingField,
   onUpdateSectionMarkdown,
+  onUpdateTypographyField,
+  onUpdateVoiceToneField,
   onUploadSectionAssets,
+  onViewMarkdown,
   repo,
   scanningUrl,
   tab,
+  typographyStatus,
+  voiceToneStatus,
 }: {
+  brandBasicsStatus: string;
+  channelSeoStatus: string;
+  colorsStatus: string;
+  identityField: IdentityField;
+  identityStatus: string;
   lastSectionScan: { tab: RepoKind; url: string } | null;
+  messagingStatus: string;
+  onAddColorToken: () => void;
   onAddSectionMarkdown: (tab: RepoKind, markdown: string) => void;
   onDeleteAsset: (assetId: string) => void;
+  onDeleteColorToken: (colorId: string) => void;
   onDeleteSectionMarkdown: (tab: RepoKind, index: number) => void;
   onScanSectionUrl: (url: string, tab: RepoKind) => void;
+  onUpdateAssetDetails: (assetId: string, field: "name" | "description", value: string) => void;
+  onUpdateBrandBasics: (field: "name" | "website" | "description" | "about", value: string) => void;
+  onUpdateChannelSeoField: (field: keyof ChannelSeoSettings, value: string) => void;
+  onUpdateColorRules: (value: string) => void;
+  onUpdateColorToken: (colorId: string, field: "name" | "hex" | "description", value: string) => void;
+  onUpdateIdentityField: (field: IdentityField, value: string) => void;
+  onUpdateMessagingField: (
+    field: "primaryValueProposition" | "keyMessages" | "targetCustomer" | "mainCustomerProblem" | "keyDifferentiators" | "tagline",
+    value: string,
+  ) => void;
   onUpdateSectionMarkdown: (tab: RepoKind, index: number, markdown: string) => void;
-  onUploadSectionAssets: (files: FileList | null, tab: RepoKind) => void;
+  onUpdateTypographyField: (field: "fontNames" | "weights" | "usageRules", value: string) => void;
+  onUpdateVoiceToneField: (
+    field: "voiceCharacteristics" | "writingRules" | "wordsToUse" | "wordsToAvoid",
+    value: string,
+  ) => void;
+  onUploadSectionAssets: (files: FileList | null, tab: RepoKind, assetTag?: string) => void;
+  onViewMarkdown: (tab: RepoKind) => void;
   repo: RepoState;
   scanningUrl: string;
   tab: RepoKind;
+  typographyStatus: string;
+  voiceToneStatus: string;
 }) {
   const sectionUrls = getRepoSectionUrls(repo, tab);
   const sectionNotes = getRepoSectionNotes(repo, tab);
@@ -1810,7 +3180,15 @@ function RepoPanel({
         haystack.includes("illustration")
       );
     }
-    if (tab === "Imagery") return haystack.includes("photo") || haystack.includes("image") || haystack.includes("imagery") || asset.type === "Image";
+    if (tab === "Imagery") {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      const isIdentityAsset =
+        metadata.includes("identity") ||
+        ["logo", "logotype", "wordmark", "icon", "symbol", "favicon", "element", "pattern", "graphic", "illustration"].some((term) =>
+          haystack.includes(term),
+        );
+      return !isIdentityAsset && (metadata.includes("imagery") || metadata.includes("photo") || haystack.includes("photo") || haystack.includes("imagery"));
+    }
     return false;
   });
   const rulesForTab = repo.brand.rules.filter((rule) => {
@@ -1836,51 +3214,259 @@ function RepoPanel({
     return false;
   });
 
-  if (tab === "Brand Guidelines") {
+  if (tab === "Brand Basics") {
     return (
       <section className="repo-panel">
-        <h2>Brand Guidelines</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {repo.brand.description ? <p>{repo.brand.description}</p> : null}
-        <Field label="Values" values={repo.brand.values} />
-        <Field label="Rules" values={repo.brand.rules} />
-        <Field label="Approved terminology" values={repo.brand.approvedTerms} />
-        <Field label="Prohibited terminology" values={repo.brand.prohibitedTerms} />
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Brand Basics" />
+        <div className="basic-fields">
+          <label>
+            Brand name
+            <input
+              onChange={(event) => onUpdateBrandBasics("name", event.target.value)}
+              value={repo.company.name}
+            />
+          </label>
+          <label>
+            Website URL
+            <input
+              onChange={(event) => onUpdateBrandBasics("website", event.target.value)}
+              value={repo.company.website}
+            />
+          </label>
+          <label>
+            One-line description
+            <input
+              onChange={(event) => onUpdateBrandBasics("description", event.target.value)}
+              value={repo.company.description}
+            />
+          </label>
+          <label>
+            Short About paragraph
+            <textarea
+              onChange={(event) => onUpdateBrandBasics("about", event.target.value)}
+              value={repo.brand.description}
+            />
+          </label>
+          <p className="autosave-status">{brandBasicsStatus}</p>
+        </div>
       </section>
     );
   }
 
-  if (tab === "Identity" || tab === "Imagery") {
+  if (tab === "Identity") {
+    const identity = getRepoIdentity(repo);
+    const activeIdentitySection = identitySections.find((section) => section.field === identityField) ?? identitySections[0];
+    const logoAssets = visualAssets.filter((asset) => {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      return metadata.includes("logo");
+    });
+    const iconAssets = visualAssets.filter((asset) => {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      return metadata.includes("icon");
+    });
+    const elementAssets = visualAssets.filter((asset) => {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      return metadata.includes("element");
+    });
+
     return (
       <section className="repo-panel">
-        <h2>{tab}</h2>
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Identity" />
+        <div className="identity-editor">
+          {identityField === "logos" ? (
+            <section className="identity-assets">
+              <label className="logo-upload">
+                <span>Logo files</span>
+                <strong>Select SVG, PNG, JPG, or WebP files</strong>
+                <input
+                  accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                  multiple
+                  onChange={(event) => onUploadSectionAssets(event.target.files, "Identity", "logo")}
+                  type="file"
+                />
+              </label>
+              {logoAssets.length ? (
+                <section className="object-list asset-list">
+                  {logoAssets.map((asset) => (
+                    <AssetCard
+                      asset={asset}
+                      compact
+                      editable
+                      key={asset.id}
+                      onDelete={onDeleteAsset}
+                      onUpdate={onUpdateAssetDetails}
+                    />
+                  ))}
+                </section>
+              ) : null}
+            </section>
+          ) : null}
+          {identityField === "icons" ? (
+            <section className="identity-assets">
+              <label className="logo-upload">
+                <span>Icon files</span>
+                <strong>Select SVG, PNG, JPG, or WebP files</strong>
+                <input
+                  accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                  multiple
+                  onChange={(event) => onUploadSectionAssets(event.target.files, "Identity", "icon")}
+                  type="file"
+                />
+              </label>
+              {iconAssets.length ? (
+                <section className="object-list asset-list">
+                  {iconAssets.map((asset) => (
+                    <AssetCard
+                      asset={asset}
+                      compact
+                      editable
+                      key={asset.id}
+                      onDelete={onDeleteAsset}
+                      onUpdate={onUpdateAssetDetails}
+                    />
+                  ))}
+                </section>
+              ) : null}
+            </section>
+          ) : null}
+          {identityField === "elements" ? (
+            <section className="identity-assets">
+              <label className="logo-upload">
+                <span>Element files</span>
+                <strong>Select SVG, PNG, JPG, or WebP files</strong>
+                <input
+                  accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                  multiple
+                  onChange={(event) => onUploadSectionAssets(event.target.files, "Identity", "element")}
+                  type="file"
+                />
+              </label>
+              {elementAssets.length ? (
+                <section className="object-list asset-list">
+                  {elementAssets.map((asset) => (
+                    <AssetCard
+                      asset={asset}
+                      compact
+                      editable
+                      key={asset.id}
+                      onDelete={onDeleteAsset}
+                      onUpdate={onUpdateAssetDetails}
+                    />
+                  ))}
+                </section>
+              ) : null}
+            </section>
+          ) : null}
+          <label>
+            {activeIdentitySection.label}
+            <textarea
+              onChange={(event) => onUpdateIdentityField(identityField, event.target.value)}
+              value={identity[identityField]}
+            />
+          </label>
+          <p className="autosave-status">{identityStatus}</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (tab === "Imagery") {
+    return (
+      <section className="repo-panel">
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title={tab} />
+        <section className="identity-assets">
+          <label className="logo-upload">
+            <span>Imagery files</span>
+            <strong>Select photography or image files</strong>
+            <input
+              accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+              multiple
+              onChange={(event) => onUploadSectionAssets(event.target.files, "Imagery", "imagery")}
+              type="file"
+            />
+          </label>
+          {visualAssets.length ? (
+            <section className="object-list asset-list">
+              {visualAssets.map((asset) => (
+                <AssetCard asset={asset} compact key={asset.id} onDelete={onDeleteAsset} />
+              ))}
+            </section>
+          ) : null}
+        </section>
         <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
         {notes}
         {rulesForTab.length ? (
           <Field label="Usage guidance" values={rulesForTab} />
-        ) : null}
-        {visualAssets.length ? (
-          <section className="object-list asset-list">
-            {visualAssets.map((asset) => (
-              <AssetCard asset={asset} compact key={asset.id} onDelete={onDeleteAsset} />
-            ))}
-          </section>
         ) : null}
       </section>
     );
   }
 
   if (tab === "Colors") {
+    const colors = getRepoColors(repo);
+
     return (
       <section className="repo-panel">
-        <h2>Colors</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {rulesForTab.length ? <Field label="Color guidance" values={rulesForTab} /> : null}
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Colors" />
+        <div className="color-section">
+          <div className="color-list">
+            {colors.map((color) => {
+              const hasPreview = isCompleteHexColor(color.hex);
+
+              return (
+                <article className="color-card" key={color.id}>
+                  <div
+                    aria-label={hasPreview ? `${color.name || "Color"} preview ${color.hex}` : "Color preview"}
+                    className="color-preview"
+                    style={{ backgroundColor: hasPreview ? color.hex : undefined }}
+                  />
+                  <div className="color-card-fields">
+                    <label>
+                      Name
+                      <input
+                        onChange={(event) => onUpdateColorToken(color.id, "name", event.target.value)}
+                        placeholder="Primary"
+                        value={color.name}
+                      />
+                    </label>
+                    <label>
+                      Hex value
+                      <input
+                        inputMode="text"
+                        onChange={(event) => onUpdateColorToken(color.id, "hex", event.target.value)}
+                        placeholder="#0057ff"
+                        value={color.hex}
+                      />
+                    </label>
+                    <label>
+                      Description
+                      <textarea
+                        onChange={(event) => onUpdateColorToken(color.id, "description", event.target.value)}
+                        placeholder="Describe where this color should be used."
+                        value={color.description}
+                      />
+                    </label>
+                  </div>
+                  <button className="danger-secondary icon-action" onClick={() => onDeleteColorToken(color.id)} type="button">
+                    Delete
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+          <button className="secondary" onClick={onAddColorToken} type="button">
+            Add color
+          </button>
+          <label>
+            Rules
+            <textarea
+              onChange={(event) => onUpdateColorRules(event.target.value)}
+              placeholder="Describe color usage rules, contrast guidance, accessibility notes, or restrictions."
+              value={getRepoColorRules(repo)}
+            />
+          </label>
+          <p className="autosave-status">{colorsStatus}</p>
+        </div>
       </section>
     );
   }
@@ -1888,39 +3474,127 @@ function RepoPanel({
   if (tab === "Voice & Tone") {
     return (
       <section className="repo-panel">
-        <h2>Voice & Tone</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        <Field label="Voice" values={repo.brand.voice} />
-        <Field label="Approved terminology" values={repo.brand.approvedTerms} />
-        <Field label="Prohibited terminology" values={repo.brand.prohibitedTerms} />
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Voice & Tone" />
+        <div className="basic-fields">
+          <label>
+            Voice characteristics
+            <textarea
+              onChange={(event) => onUpdateVoiceToneField("voiceCharacteristics", event.target.value)}
+              value={repo.brand.voice.join("\n")}
+            />
+          </label>
+          <label>
+            Writing rules
+            <textarea
+              onChange={(event) => onUpdateVoiceToneField("writingRules", event.target.value)}
+              value={repo.brand.rules.join("\n")}
+            />
+          </label>
+          <label>
+            Words/phrases to use
+            <textarea
+              onChange={(event) => onUpdateVoiceToneField("wordsToUse", event.target.value)}
+              value={repo.brand.approvedTerms.join("\n")}
+            />
+          </label>
+          <label>
+            Words/phrases to avoid
+            <textarea
+              onChange={(event) => onUpdateVoiceToneField("wordsToAvoid", event.target.value)}
+              value={repo.brand.prohibitedTerms.join("\n")}
+            />
+          </label>
+          <p className="autosave-status">{voiceToneStatus}</p>
+        </div>
       </section>
     );
   }
 
   if (tab === "Typography") {
+    const typography = getRepoTypography(repo);
+
     return (
       <section className="repo-panel">
-        <h2>Typography</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {rulesForTab.length ? <Field label="Typography guidance" values={rulesForTab} /> : null}
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Typography" />
+        <div className="basic-fields">
+          <label>
+            Font names
+            <textarea
+              onChange={(event) => onUpdateTypographyField("fontNames", event.target.value)}
+              value={typography.fontNames.join("\n")}
+            />
+          </label>
+          <label>
+            Weights
+            <textarea
+              onChange={(event) => onUpdateTypographyField("weights", event.target.value)}
+              value={typography.weights.join("\n")}
+            />
+          </label>
+          <label>
+            Basic usage rules
+            <textarea
+              onChange={(event) => onUpdateTypographyField("usageRules", event.target.value)}
+              value={typography.usageRules}
+            />
+          </label>
+          <p className="autosave-status">{typographyStatus}</p>
+        </div>
       </section>
     );
   }
 
   if (tab === "Messaging") {
+    const message = repo.messaging[0];
+    const audience = repo.audiences[0];
     return (
       <section className="repo-panel">
-        <h2>Messaging</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {repo.messaging.length ? (
-          <ObjectList emptyDescription="" emptyTitle="" items={repo.messaging} title={(item) => item.positioning} render={(item) => item.valueProps.join(" ")} />
-        ) : null}
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Messaging" />
+        <div className="basic-fields">
+          <label>
+            Primary value proposition
+            <textarea
+              onChange={(event) => onUpdateMessagingField("primaryValueProposition", event.target.value)}
+              value={message?.valueProps[0] ?? message?.positioning ?? ""}
+            />
+          </label>
+          <label>
+            3-5 key messages
+            <textarea
+              onChange={(event) => onUpdateMessagingField("keyMessages", event.target.value)}
+              value={message?.keyMessages.join("\n") ?? ""}
+            />
+          </label>
+          <label>
+            Target customer
+            <input
+              onChange={(event) => onUpdateMessagingField("targetCustomer", event.target.value)}
+              value={audience?.name ?? ""}
+            />
+          </label>
+          <label>
+            Main customer problem
+            <textarea
+              onChange={(event) => onUpdateMessagingField("mainCustomerProblem", event.target.value)}
+              value={audience?.painPoints[0] ?? ""}
+            />
+          </label>
+          <label>
+            Key differentiators
+            <textarea
+              onChange={(event) => onUpdateMessagingField("keyDifferentiators", event.target.value)}
+              value={message?.proofPoints.join("\n") ?? ""}
+            />
+          </label>
+          <label>
+            Tagline, if one exists
+            <input
+              onChange={(event) => onUpdateMessagingField("tagline", event.target.value)}
+              value={message?.taglines[0] ?? ""}
+            />
+          </label>
+          <p className="autosave-status">{messagingStatus}</p>
+        </div>
       </section>
     );
   }
@@ -1928,7 +3602,7 @@ function RepoPanel({
   if (tab === "Audiences") {
     return (
       <section className="repo-panel">
-        <h2>Audiences</h2>
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Audiences" />
         <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
         {sectionIntake}
         {notes}
@@ -1945,46 +3619,172 @@ function RepoPanel({
     );
   }
 
-  const channels = [...new Set(repo.audiences.flatMap((audience) => audience.channels).filter(Boolean))];
-  const seoGuidance = [
-    ...repo.messaging.flatMap((message) => [...message.valueProps, ...message.keyMessages, ...message.claims]),
-    ...repo.audiences.flatMap((audience) => [...audience.needs, ...audience.messaging]),
-  ].filter((value) => {
-    const normalized = value.toLowerCase();
-    return normalized.includes("seo") || normalized.includes("search") || normalized.includes("channel") || normalized.includes("content");
-  });
-
   if (tab === "Channel SEO") {
+    const channelSeo = getRepoChannelSeo(repo);
+
     return (
       <section className="repo-panel">
-        <h2>Channel SEO</h2>
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {channels.length || seoGuidance.length ? (
-          <>
-            <Field label="Channels" values={channels} />
-            <Field label="SEO guidance" values={seoGuidance} />
-          </>
-        ) : null}
+        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Channel SEO" />
+        <div className="basic-fields">
+          <label>
+            Output defaults
+            <textarea onChange={(event) => onUpdateChannelSeoField("outputDefaults", event.target.value)} value={channelSeo.outputDefaults} />
+          </label>
+          <label>
+            Blog
+            <textarea onChange={(event) => onUpdateChannelSeoField("blog", event.target.value)} value={channelSeo.blog} />
+          </label>
+          <label>
+            LinkedIn
+            <textarea onChange={(event) => onUpdateChannelSeoField("linkedin", event.target.value)} value={channelSeo.linkedin} />
+          </label>
+          <label>
+            X
+            <textarea onChange={(event) => onUpdateChannelSeoField("x", event.target.value)} value={channelSeo.x} />
+          </label>
+          <label>
+            Instagram
+            <textarea onChange={(event) => onUpdateChannelSeoField("instagram", event.target.value)} value={channelSeo.instagram} />
+          </label>
+          <label>
+            Carousel
+            <textarea onChange={(event) => onUpdateChannelSeoField("carousel", event.target.value)} value={channelSeo.carousel} />
+          </label>
+          <label>
+            Closing lines
+            <textarea onChange={(event) => onUpdateChannelSeoField("closingLines", event.target.value)} value={channelSeo.closingLines} />
+          </label>
+          <label>
+            SEO planning
+            <textarea onChange={(event) => onUpdateChannelSeoField("seoPlanning", event.target.value)} value={channelSeo.seoPlanning} />
+          </label>
+          <label>
+            Keywords
+            <textarea onChange={(event) => onUpdateChannelSeoField("keywords", event.target.value)} value={channelSeo.keywords} />
+          </label>
+          <label>
+            Hashtags
+            <textarea onChange={(event) => onUpdateChannelSeoField("hashtags", event.target.value)} value={channelSeo.hashtags} />
+          </label>
+          <label>
+            Success metrics
+            <textarea onChange={(event) => onUpdateChannelSeoField("successMetrics", event.target.value)} value={channelSeo.successMetrics} />
+          </label>
+          <p className="autosave-status">{channelSeoStatus}</p>
+        </div>
       </section>
     );
   }
 
+  return null;
+}
+
+function BrandRepoLogo() {
   return (
-    <section className="repo-panel">
-      <h2>Rules</h2>
-      <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-      {sectionIntake}
-      {notes}
-      {repo.brand.rules.length || repo.brand.approvedTerms.length || repo.brand.prohibitedTerms.length ? (
-        <>
-          <Field label="Usage rules" values={repo.brand.rules} />
-          <Field label="Approved terminology" values={repo.brand.approvedTerms} />
-          <Field label="Prohibited terminology" values={repo.brand.prohibitedTerms} />
-        </>
-      ) : null}
-    </section>
+    <span aria-label="BrandRepo" className="brand-logo" role="img">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" className="brand-logo-image brand-logo-image-dark" src="/brandrepo-logo-white.png" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" className="brand-logo-image brand-logo-image-light" src="/brandrepo-logo-black.png" />
+    </span>
+  );
+}
+
+function RepoSectionHeader({
+  fileName,
+  onViewMarkdown,
+  title,
+}: {
+  fileName: string;
+  onViewMarkdown: () => void;
+  title: string;
+}) {
+  return (
+    <div className="repo-section-header">
+      <div>
+        <h2>{title}</h2>
+        <span>{fileName}</span>
+      </div>
+      <button className="secondary" onClick={onViewMarkdown} type="button">
+        View .md
+      </button>
+    </div>
+  );
+}
+
+function MarkdownDrawer({
+  fileName,
+  isOpen,
+  markdown,
+  onClose,
+  section,
+}: {
+  fileName: string;
+  isOpen: boolean;
+  markdown: string;
+  onClose: () => void;
+  section: RepoKind;
+}) {
+  return (
+    <div className={`drawer-layer ${isOpen ? "open" : ""}`} role="presentation">
+      <button aria-label="Close Markdown drawer" className="drawer-backdrop" onClick={onClose} type="button" />
+      <aside aria-label={`${section} Markdown`} className="markdown-drawer">
+        <header>
+          <div>
+            <p className="eyebrow">{section}</p>
+            <h2>{fileName}</h2>
+          </div>
+          <button className="secondary" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <pre>{markdown}</pre>
+      </aside>
+    </div>
+  );
+}
+
+function SectionMarkdownImportDrawer({
+  isOpen,
+  markdown,
+  onChange,
+  onClose,
+  onSave,
+  section,
+}: {
+  isOpen: boolean;
+  markdown: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+  section: RepoKind;
+}) {
+  return (
+    <div className={`drawer-layer ${isOpen ? "open" : ""}`} role="presentation">
+      <button aria-label="Close Markdown upload drawer" className="drawer-backdrop" onClick={onClose} type="button" />
+      <aside aria-label={`Upload ${section} Markdown`} className="markdown-drawer markdown-import-drawer">
+        <header>
+          <div>
+            <p className="eyebrow">{section}</p>
+            <h2>Upload .md</h2>
+          </div>
+          <button className="secondary" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <div className="markdown-import-body">
+          <textarea
+            aria-label={`Paste existing ${section} Markdown`}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={`Paste an existing ${sectionMarkdownFileName(section)} file here`}
+            value={markdown}
+          />
+          <button disabled={!markdown.trim()} onClick={onSave} type="button">
+            Save
+          </button>
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -2166,7 +3966,19 @@ function isPreviewableAsset(asset: Asset) {
   return Boolean(asset.url) && (asset.type === "Image" || /\.(svg|png|jpe?g|webp|gif)(\?|#|$)/i.test(asset.url ?? ""));
 }
 
-function AssetCard({ asset, compact = false, onDelete }: { asset: Asset; compact?: boolean; onDelete?: (assetId: string) => void }) {
+function AssetCard({
+  asset,
+  compact = false,
+  editable = false,
+  onDelete,
+  onUpdate,
+}: {
+  asset: Asset;
+  compact?: boolean;
+  editable?: boolean;
+  onDelete?: (assetId: string) => void;
+  onUpdate?: (assetId: string, field: "name" | "description", value: string) => void;
+}) {
   return (
     <article className={compact ? "asset-card compact" : "asset-card"}>
       {isPreviewableAsset(asset) ? (
@@ -2179,6 +3991,18 @@ function AssetCard({ asset, compact = false, onDelete }: { asset: Asset; compact
           <span>{asset.type}</span>
         </div>
       )}
+      {editable && onUpdate ? (
+        <div className="asset-edit-fields">
+          <label>
+            Name
+            <input onChange={(event) => onUpdate(asset.id, "name", event.target.value)} value={asset.name} />
+          </label>
+          <label>
+            Description
+            <textarea onChange={(event) => onUpdate(asset.id, "description", event.target.value)} value={asset.description} />
+          </label>
+        </div>
+      ) : null}
       <div className="asset-actions">
         {asset.url ? (
           <a className="asset-link" href={asset.url} rel="noreferrer" target="_blank">
