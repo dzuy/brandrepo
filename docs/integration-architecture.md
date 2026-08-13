@@ -270,6 +270,39 @@ Canva likely needs an app integration focused on assets and brand kit workflows.
 - Add scoped token auth for local testing.
 - Test in ChatGPT developer mode.
 
+## Current Acceptance Criteria
+
+The first integration foundation is considered acceptable when all of the following are true:
+
+- `lib/repo-context.ts` is the centralized source for repo context assembly.
+- BrandRepo Chat uses the centralized Repo Context Service rather than assembling markdown inline.
+- Repo context includes repo metadata, section markdown files, structured section data, and asset metadata.
+- Repo context excludes raw base64 asset data from markdown.
+- Repo context preserves markdown filenames such as `brand-basics.md`, `messaging.md`, and `channel-seo.md`.
+- Repo context supports size limits so model prompts do not grow without bound.
+- Read-only API routes exist for repo listing, full context, section markdown, assets, and search.
+- API routes require a Supabase bearer token and do not expose private repos anonymously.
+- A read-only MCP endpoint exists at `/api/mcp`.
+- MCP exposes tools for listing repos, retrieving repo context, retrieving section markdown, searching repo context, and listing/fetching assets.
+- MCP write tools are intentionally not exposed yet.
+- Automated tests confirm context generation, asset sanitization, context truncation, MCP tools, and server render health.
+
+## Acceptance Test Loop
+
+Run these commands before considering integration foundation work complete:
+
+```bash
+npm run lint
+npm run build
+npm test
+```
+
+The `npm test` command must include:
+
+- Context generation tests.
+- MCP read-only tool tests.
+- Rendered app shell tests.
+
 ### Phase 3: Draft Workflow
 
 - Add draft objects.
@@ -296,4 +329,3 @@ Canva likely needs an app integration focused on assets and brand kit workflows.
 Before building the ChatGPT MCP server, build the internal Repo Context API first.
 
 This keeps BrandRepo from becoming tied to one provider and gives every future integration the same stable source of brand truth.
-
