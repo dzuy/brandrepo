@@ -1804,6 +1804,11 @@ button.read-field-edit:focus-visible {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.integration-token-block {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .developer-token-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1820,6 +1825,52 @@ button.read-field-edit:focus-visible {
   line-height: 1.5;
   min-height: 84px;
   resize: vertical;
+}
+
+.integration-token-secret {
+  background: var(--panel-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.integration-token-secret button {
+  justify-self: start;
+}
+
+.integration-token-list {
+  display: grid;
+  gap: 8px;
+}
+
+.integration-token-list article {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.integration-token-list strong,
+.integration-token-list span,
+.integration-token-list small {
+  display: block;
+}
+
+.integration-token-list span {
+  color: var(--muted-strong);
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  margin-top: 3px;
+}
+
+.integration-token-list small {
+  color: var(--muted);
+  margin-top: 4px;
 }
 
 .theme-toggle {

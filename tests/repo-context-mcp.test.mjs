@@ -129,6 +129,31 @@ function sampleWorkspace(initialRepo) {
   };
 }
 
+function sampleSparseWorkspace(initialRepo) {
+  return {
+    id: "repo-empty",
+    name: "EmptyCo",
+    generatedDraft: "",
+    generationType: "social",
+    chatMessages: [],
+    repo: {
+      ...initialRepo,
+      company: {
+        name: "EmptyCo",
+        website: "",
+        description: "",
+      },
+      brand: {
+        ...initialRepo.brand,
+        description: "",
+      },
+      messaging: [],
+      audiences: [],
+      assets: [],
+    },
+  };
+}
+
 test("repo context creates agent-ready markdown and sanitizes embedded assets", async () => {
   const { repoModel, repoContext } = await loadLibraries();
   const workspace = sampleWorkspace(repoModel.initialRepo);
@@ -198,3 +223,99 @@ test("read-only MCP tools expose repo context, sections, assets, and search", as
   assert.match(search.result.content[0].text, /Works across ChatGPT, Claude, Figma, and Canva/);
 });
 
+test("MCP repo discovery returns selection metadata and bad repo guidance", async () => {
+  const { repoModel, mcp } = await loadLibraries();
+  const fullWorkspace = sampleWorkspace(repoModel.initialRepo);
+  const sparseWorkspace = sampleSparseWorkspace(repoModel.initialRepo);
+
+  const repos = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: { name: "list_repos", arguments: {} },
+    },
+    [fullWorkspace, sparseWorkspace],
+  );
+  const reposPayload = JSON.parse(repos.result.content[0].text);
+  assert.equal(reposPayload.repos.length, 2);
+  assert.equal(reposPayload.repos[0].id, "repo-blueocean");
+  assert.equal(reposPayload.repos[0].slug, "blueocean");
+  assert.equal(typeof reposPayload.repos[0].completeness.percentage, "number");
+  assert.equal(reposPayload.repos[0].assetCounts.logo, 1);
+  assert.equal(reposPayload.repos[1].id, "repo-empty");
+  assert.ok(reposPayload.repos[0].completeness.percentage > reposPayload.repos[1].completeness.percentage);
+
+  const overview = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: { name: "get_repo_overview", arguments: { repo_id: "repo-blueocean" } },
+    },
+    [fullWorkspace, sparseWorkspace],
+  );
+  const overviewPayload = JSON.parse(overview.result.content[0].text);
+  assert.equal(overviewPayload.id, "repo-blueocean");
+  assert.equal(overviewPayload.completeness.sections.some((section) => section.key === "messaging"), true);
+  assert.equal(overviewPayload.assetCounts.generated, 1);
+
+  const missing = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "get_repo_context", arguments: { repo_id: "missing" } },
+    },
+    [fullWorkspace, sparseWorkspace],
+  );
+  assert.match(missing.result.content[0].text, /Call list_repos first/);
+  assert.match(missing.result.content[0].text, /repo-blueocean/);
+  assert.match(missing.result.content[0].text, /repo-empty/);
+});
+
+test("MCP tools cap large responses and return safe protocol errors", async () => {
+  const { repoModel, mcp } = await loadLibraries();
+  const workspace = sampleWorkspace(repoModel.initialRepo);
+  workspace.repo.messaging[0].keyMessages = Array.from({ length: 800 }, (_, index) => `Large message ${index}: ${"brand context ".repeat(8)}`);
+
+  const context = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: { name: "get_repo_context", arguments: { repo_id: "repo-blueocean" } },
+    },
+    [workspace],
+  );
+  assert.ok(context.result.content[0].text.length <= 28100);
+  assert.match(context.result.content[0].text, /Truncated by BrandRepo MCP response limit|Truncated by BrandRepo context limit/);
+
+  const unknownTool = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "tools/call",
+      params: { name: "delete_repo", arguments: { repo_id: "repo-blueocean" } },
+    },
+    [workspace],
+  );
+  assert.equal(unknownTool.error.code, -32601);
+  assert.equal(unknownTool.error.message, "Unknown tool.");
+
+  const invalidArgs = mcp.handleBrandRepoMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: { name: "get_repo_context", arguments: "repo-blueocean" },
+    },
+    [workspace],
+  );
+  assert.equal(invalidArgs.error.code, -32602);
+  assert.equal(invalidArgs.error.message, "Tool arguments must be an object.");
+
+  const unsupported = mcp.handleBrandRepoMcpRequest({ jsonrpc: "2.0", id: 8, method: "repo/delete" }, [workspace]);
+  assert.equal(unsupported.error.code, -32601);
+  assert.equal(unsupported.error.message, "Unsupported method.");
+});

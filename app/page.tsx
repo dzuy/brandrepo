@@ -49,6 +49,17 @@ type ImageReferenceAsset = {
   metadata: string[];
 };
 
+type IntegrationTokenView = {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  scopes: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+};
+
 type IdentityField = keyof IdentitySettings;
 type MessagingField = "primaryValueProposition" | "keyMessages" | "targetCustomer" | "mainCustomerProblem" | "keyDifferentiators" | "tagline";
 type VoiceToneField = "voiceCharacteristics" | "writingRules" | "wordsToUse" | "wordsToAvoid";
@@ -837,6 +848,11 @@ export default function Home() {
   const [developerTokenVisible, setDeveloperTokenVisible] = useState(false);
   const [developerTokenStatus, setDeveloperTokenStatus] = useState<"idle" | "loading" | "copied" | "error">("idle");
   const [developerTokenError, setDeveloperTokenError] = useState("");
+  const [integrationTokens, setIntegrationTokens] = useState<IntegrationTokenView[]>([]);
+  const [integrationTokenName, setIntegrationTokenName] = useState("ChatGPT MCP");
+  const [newIntegrationTokenSecret, setNewIntegrationTokenSecret] = useState("");
+  const [integrationTokenStatus, setIntegrationTokenStatus] = useState<"idle" | "loading" | "creating" | "revoking" | "copied" | "error">("idle");
+  const [integrationTokenError, setIntegrationTokenError] = useState("");
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [themePreferenceReady, setThemePreferenceReady] = useState(false);
   const [cloudHydrated, setCloudHydrated] = useState(false);
@@ -921,6 +937,12 @@ export default function Home() {
     window.localStorage.setItem(themeStorageKey, theme);
     window.localStorage.removeItem(legacyThemeStorageKey);
   }, [theme, themePreferenceReady]);
+
+  useEffect(() => {
+    if (section !== "Settings" || !currentUser || !isSupabaseConfigured) return;
+    void loadIntegrationTokens();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, currentUser?.id]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1836,6 +1858,107 @@ export default function Home() {
     } catch {
       setDeveloperTokenStatus("error");
       setDeveloperTokenError("Unable to copy token automatically.");
+    }
+  }
+
+  async function getCurrentAccessToken() {
+    if (!supabase) return "";
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.access_token) {
+      throw new Error(error?.message ?? "No active Supabase session token is available.");
+    }
+    return data.session.access_token;
+  }
+
+  async function loadIntegrationTokens() {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setIntegrationTokenStatus("loading");
+      setIntegrationTokenError("");
+      const response = await fetch("/api/integration-tokens", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to load integration tokens.");
+      }
+
+      setIntegrationTokens(payload.tokens ?? []);
+      setIntegrationTokenStatus("idle");
+    } catch (error) {
+      setIntegrationTokenStatus("error");
+      setIntegrationTokenError(error instanceof Error ? error.message : "Unable to load integration tokens.");
+    }
+  }
+
+  async function createIntegrationToken() {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setIntegrationTokenStatus("creating");
+      setIntegrationTokenError("");
+      setNewIntegrationTokenSecret("");
+      const response = await fetch("/api/integration-tokens", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: integrationTokenName }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to create integration token.");
+      }
+
+      setNewIntegrationTokenSecret(payload.secret ?? "");
+      setIntegrationTokens((current) => [payload.token, ...current].filter(Boolean));
+      setIntegrationTokenStatus("idle");
+    } catch (error) {
+      setIntegrationTokenStatus("error");
+      setIntegrationTokenError(error instanceof Error ? error.message : "Unable to create integration token.");
+    }
+  }
+
+  async function copyIntegrationTokenSecret() {
+    if (!newIntegrationTokenSecret) return;
+
+    try {
+      await navigator.clipboard.writeText(newIntegrationTokenSecret);
+      setIntegrationTokenStatus("copied");
+    } catch {
+      setIntegrationTokenStatus("error");
+      setIntegrationTokenError("Unable to copy token automatically.");
+    }
+  }
+
+  async function revokeIntegrationToken(tokenId: string) {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setIntegrationTokenStatus("revoking");
+      setIntegrationTokenError("");
+      const response = await fetch(`/api/integration-tokens/${encodeURIComponent(tokenId)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to revoke integration token.");
+      }
+
+      setIntegrationTokens((current) =>
+        current.map((token) => (token.id === tokenId ? { ...token, revokedAt: new Date().toISOString() } : token)),
+      );
+      setIntegrationTokenStatus("idle");
+    } catch (error) {
+      setIntegrationTokenStatus("error");
+      setIntegrationTokenError(error instanceof Error ? error.message : "Unable to revoke integration token.");
     }
   }
 
@@ -3011,6 +3134,68 @@ export default function Home() {
                   <p className="form-note">Use this as an `Authorization: Bearer ...` token while testing locally.</p>
                   {developerTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
                   {developerTokenError && <span className="error-text">{developerTokenError}</span>}
+                </section>
+              ) : null}
+              {isSupabaseConfigured && currentUser ? (
+                <section className="settings-block integration-token-block">
+                  <div>
+                    <h3>Integration tokens</h3>
+                    <p>Scoped read-only tokens for external MCP clients. New tokens are shown once.</p>
+                  </div>
+                  <label>
+                    Token name
+                    <input
+                      onChange={(event) => setIntegrationTokenName(event.target.value)}
+                      placeholder="ChatGPT MCP"
+                      value={integrationTokenName}
+                    />
+                  </label>
+                  <div className="developer-token-actions">
+                    <button disabled={integrationTokenStatus === "creating"} onClick={createIntegrationToken} type="button">
+                      {integrationTokenStatus === "creating" ? "Creating..." : "Create token"}
+                    </button>
+                    <button className="secondary" disabled={integrationTokenStatus === "loading"} onClick={loadIntegrationTokens} type="button">
+                      {integrationTokenStatus === "loading" ? "Loading..." : "Refresh list"}
+                    </button>
+                  </div>
+                  {newIntegrationTokenSecret ? (
+                    <div className="integration-token-secret">
+                      <p>Copy this token now. BrandRepo will not show it again.</p>
+                      <textarea className="developer-token-field" readOnly value={newIntegrationTokenSecret} />
+                      <button className="secondary" onClick={copyIntegrationTokenSecret} type="button">
+                        Copy new token
+                      </button>
+                    </div>
+                  ) : null}
+                  <div className="integration-token-list">
+                    {integrationTokens.length ? (
+                      integrationTokens.map((token) => (
+                        <article key={token.id}>
+                          <div>
+                            <strong>{token.name}</strong>
+                            <span>{token.tokenPrefix}...</span>
+                            <small>
+                              {token.scopes.join(", ")} · Created {new Date(token.createdAt).toLocaleDateString()}
+                              {token.lastUsedAt ? ` · Last used ${new Date(token.lastUsedAt).toLocaleDateString()}` : ""}
+                              {token.revokedAt ? " · Revoked" : ""}
+                            </small>
+                          </div>
+                          {!token.revokedAt ? (
+                            <button className="danger-secondary" onClick={() => revokeIntegrationToken(token.id)} type="button">
+                              Revoke
+                            </button>
+                          ) : null}
+                        </article>
+                      ))
+                    ) : (
+                      <p>No integration tokens yet.</p>
+                    )}
+                  </div>
+                  <p className="form-note">
+                    Use integration tokens with `Authorization: Bearer ...` against `https://brandrepo.dev/api/mcp`.
+                  </p>
+                  {integrationTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
+                  {integrationTokenError && <span className="error-text">{integrationTokenError}</span>}
                 </section>
               ) : null}
               {isSupabaseConfigured ? (

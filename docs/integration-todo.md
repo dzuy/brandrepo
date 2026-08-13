@@ -8,8 +8,11 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [ ] Add `https://brandrepo.dev/**` to Supabase Auth redirect URLs after the production domain is connected.
 - [ ] Add `https://brandrepo.dev` and `https://www.brandrepo.dev` to Google OAuth authorized JavaScript origins after the production domain is connected.
 - [x] Add a temporary developer token view in Settings for local API/MCP testing.
+- [x] Add scoped integration tokens for external API/MCP testing.
 - [x] Document authenticated curl examples for read-only API endpoints.
 - [x] Document authenticated curl examples for `/api/mcp`.
+- [x] Document ChatGPT / external MCP connection flow.
+- [x] Document integration-token architecture.
 - [x] Test `/api/repos` with a real signed-in Supabase bearer token.
 - [x] Test `/api/repos/:repoId/context` with a real signed-in Supabase bearer token.
 - [x] Test `/api/repos/:repoId/assets` with a real signed-in Supabase bearer token.
@@ -20,6 +23,7 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [x] Test MCP `tools/call` for `get_repo_context`.
 - [x] Test MCP `tools/call` for `get_section_markdown`.
 - [x] Test MCP `tools/call` for `list_assets`.
+- [x] Test deployed `/api/repos` and `/api/mcp` on Vercel with a real signed-in bearer token.
 
 ## Auth
 
@@ -31,19 +35,23 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [ ] Configure Google OAuth consent screen branding for BrandRepo.
 - [ ] Decide whether to add a Supabase custom auth domain such as `auth.brandrepo.dev`.
 - [ ] Add account linking expectations for users who sign up with email and later use Google.
-- [ ] Define production integration auth strategy.
-- [ ] Decide whether early external integrations use developer tokens, personal access tokens, or OAuth.
-- [ ] Add token scopes such as `repo:read`, `assets:read`, `drafts:write`, and `repo:write`.
+- [x] Define production integration auth strategy.
+- [x] Decide whether early external integrations use developer tokens, personal access tokens, or OAuth.
+- [x] Add token scopes such as `repo:read`, `assets:read`, `drafts:write`, and `repo:write`.
+- [ ] Add `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` to Vercel for integration-token validation.
+- [ ] Run updated `supabase/schema.sql` in Supabase SQL Editor to create integration token storage.
+- [ ] Create a real integration token in production Settings.
+- [ ] Test `https://brandrepo.dev/api/mcp` with a real `brp_` integration token.
 - [ ] Add audit logging for external API/MCP access.
 
 ## ChatGPT MCP
 
 - [ ] Confirm hosted MCP endpoint path: `/api/mcp` or `mcp.brandrepo.dev`.
 - [ ] Validate read-only MCP behavior with an external MCP client.
-- [ ] Add production-safe error responses for MCP tool calls.
-- [ ] Add response size limits per MCP tool.
-- [ ] Add repo selection behavior for users with multiple repos.
-- [ ] Add documentation for connecting BrandRepo to ChatGPT once the connection flow is available.
+- [x] Add production-safe error responses for MCP tool calls.
+- [x] Add response size limits per MCP tool.
+- [x] Add repo selection behavior for users with multiple repos.
+- [x] Add documentation for connecting BrandRepo to ChatGPT once the connection flow is available.
 
 ## Later Integrations
 

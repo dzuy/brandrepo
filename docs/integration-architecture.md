@@ -115,6 +115,8 @@ Later write endpoints:
 
 ChatGPT should connect to BrandRepo through a remote MCP server hosted at a stable HTTPS endpoint.
 
+Concrete connection steps are documented in `docs/chatgpt-mcp-connection.md`.
+
 Preferred endpoint:
 
 ```txt
@@ -135,9 +137,11 @@ Start read-only.
 
 - `list_repos`
   - Lists repos available to the authenticated user.
+  - Includes repo ids, names, slugs, website URLs, section completeness, and asset counts.
+  - External clients should call this first, then use one returned `id` as `repo_id`.
 
 - `get_repo_overview`
-  - Returns repo metadata and section completeness.
+  - Returns repo metadata, section completeness, and asset counts.
 
 - `get_repo_context`
   - Returns agent-ready repo context, including markdown and relevant assets.
@@ -174,7 +178,7 @@ Current app authentication is handled through Supabase Auth. See `docs/auth-setu
 
 Recommended path:
 
-1. Prototype with scoped developer tokens.
+1. Prototype with scoped integration tokens.
 2. Move to OAuth before broader testing.
 3. Use short-lived access tokens for tool calls.
 4. Scope tokens by account, repo, and permission level.
@@ -188,6 +192,16 @@ Permission scopes should be explicit:
 - `drafts:write`
 
 For ChatGPT, users should connect their BrandRepo account and grant access. The MCP server should validate that token on every request.
+
+Current V1 implementation:
+
+- Integration tokens are generated in Settings.
+- Raw tokens are shown once and stored only as SHA-256 hashes in Supabase.
+- V1 tokens use read scopes: `repo:read` and `assets:read`.
+- MCP/API token validation requires `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in the server environment.
+- Supabase session bearer tokens remain available for local debugging through the temporary Developer token view.
+
+The implementation details and acceptance criteria for integration tokens are documented in `docs/integration-token-architecture.md`.
 
 ## Read vs. Write Policy
 
@@ -221,6 +235,9 @@ Models need concise, well-labeled context. The Repo Context Service should:
 - Cap context length before sending to model providers.
 - Preserve filenames like `messaging.md`, `logos.md`, and `channel-seo.md`.
 - Include asset name and description so models know which asset to use.
+- Cap MCP text responses before returning them to external clients. V1 uses a 28,000 character tool response cap, with lower section/search caps where appropriate.
+- Return generic JSON-RPC errors for invalid MCP methods, unknown tools, invalid arguments, and internal failures. Do not leak stack traces or provider/database internals.
+- When a requested repo cannot be found, return guidance telling the client to call `list_repos` and include the available repo ids, names, and slugs.
 
 For image generation, logo and identity assets should be passed as image references when the provider supports image inputs. Text descriptions alone are not enough.
 
@@ -269,7 +286,7 @@ Canva likely needs an app integration focused on assets and brand kit workflows.
 
 - Add remote MCP endpoint.
 - Implement read-only tools.
-- Add scoped token auth for local testing.
+- Add scoped token auth for local and remote testing.
 - Test in ChatGPT developer mode.
 
 ## Current Acceptance Criteria
@@ -305,7 +322,7 @@ The `npm test` command must include:
 - MCP read-only tool tests.
 - Rendered app shell tests.
 
-Manual bearer-token and MCP curl checks are documented in `docs/mcp-testing.md`.
+Manual bearer-token and MCP curl checks are documented in `docs/mcp-testing.md`. ChatGPT/client connection steps are documented in `docs/chatgpt-mcp-connection.md`.
 
 ### Phase 3: Draft Workflow
 

@@ -2,7 +2,24 @@
 
 This document captures the local test loop for BrandRepo's read-only API and MCP foundation.
 
-## Get a Temporary Developer Token
+## Preferred: Create an Integration Token
+
+1. Open BrandRepo at `https://brandrepo.dev`.
+2. Sign in.
+3. Open Settings.
+4. Use Integration tokens -> Create token.
+5. Copy the token immediately. BrandRepo will not show it again.
+
+Integration tokens are scoped for external clients and are the preferred way to test remote MCP access.
+
+```bash
+export BRANDREPO_TOKEN="paste-integration-token-here"
+export BRANDREPO_BASE_URL="https://brandrepo.dev"
+```
+
+Server requirement: deployed integration-token validation requires `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in the hosting environment.
+
+## Fallback: Use a Temporary Developer Token
 
 1. Run BrandRepo locally.
 2. Sign in.
@@ -120,7 +137,8 @@ curl -s "$BRANDREPO_BASE_URL/api/mcp" \
 
 This step is acceptable when:
 
-- Settings exposes a temporary developer token for the signed-in session.
+- Settings can create a scoped integration token for external clients.
+- Settings exposes a temporary developer token for debugging the signed-in session.
 - Requests without a bearer token return `401`.
 - Requests with the copied bearer token can list repos owned by the signed-in user.
 - Read-only API endpoints return repo context, section markdown, assets, and search results.

@@ -9,6 +9,72 @@ This document captures the required provider-side setup for BrandRepo authentica
 - Reset password flow using Supabase recovery emails.
 - Google login using Supabase OAuth.
 - Pending account name handling for users who create an account with Google.
+- Scoped integration tokens for external API/MCP access.
+
+## Required Server Environment Variables
+
+Client/browser Supabase access:
+
+```txt
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
+
+Server-side integration token validation:
+
+```txt
+SUPABASE_SECRET_KEY
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` is also supported as a fallback name. This value must only be configured on the server/hosting environment. Do not expose it to the browser.
+
+## Integration Token Setup
+
+Integration tokens require database schema and a server-only Supabase key.
+
+### 1. Run the Supabase Schema
+
+Run the latest `supabase/schema.sql` in Supabase SQL Editor.
+
+This creates:
+
+- `public.brandrepo_integration_tokens`
+- indexes for user and token hash lookups
+- RLS policies so users can view, create, and revoke only their own tokens
+
+### 2. Add the Vercel Server Secret
+
+In Vercel -> Project -> Settings -> Environment Variables, add:
+
+```txt
+SUPABASE_SECRET_KEY
+```
+
+Use the Supabase secret/service-role key value. Do not use a publishable key here.
+
+Alternative supported variable name:
+
+```txt
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+### 3. Redeploy
+
+Redeploy BrandRepo after adding the variable.
+
+### 4. Create a Token
+
+In BrandRepo Settings, create an Integration token and copy it immediately. Use that token as:
+
+```txt
+Authorization: Bearer brp_...
+```
+
+against:
+
+```txt
+https://brandrepo.dev/api/mcp
+```
 
 ## Supabase Auth URL Configuration
 

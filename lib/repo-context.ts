@@ -46,6 +46,31 @@ export type RepoContext = {
   markdown: string;
 };
 
+export type RepoSectionCompleteness = {
+  tab: RepoKind;
+  key: string;
+  title: RepoKind;
+  markdownFileName: string;
+  filled: number;
+  total: number;
+  percentage: number;
+  mostlyFilled: boolean;
+};
+
+export type RepoSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  websiteUrl?: string;
+  completeness: {
+    filled: number;
+    total: number;
+    percentage: number;
+    sections: RepoSectionCompleteness[];
+  };
+  assetCounts: Record<RepoAssetKind, number>;
+};
+
 export type RepoContextOptions = {
   includeAssets?: boolean;
   includeAssetUrls?: boolean;
@@ -118,6 +143,21 @@ function stableSlug(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return normalized || "untitled-repo";
+}
+
+function hasText(value: string | undefined) {
+  return Boolean(value?.trim());
+}
+
+function countList(values: boolean[]) {
+  return {
+    filled: values.filter(Boolean).length,
+    total: values.length,
+  };
+}
+
+function isCompleteHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value.trim());
 }
 
 function assetContextUrl(asset: Asset, includeAssetUrls: boolean) {
@@ -447,6 +487,154 @@ export function getSectionByKey(section: string): RepoKind | null {
   return repoTabs.find((tab) => sectionKey(tab) === normalized || tab.toLowerCase() === section.toLowerCase()) ?? null;
 }
 
+export function getRepoSectionCompleteness(repo: RepoState, tab: RepoKind) {
+  if (tab === "Brand Basics") {
+    return countList([
+      hasText(repo.company.name),
+      hasText(repo.company.website),
+      hasText(repo.company.description),
+      hasText(repo.brand.description),
+    ]);
+  }
+
+  if (tab === "Identity") {
+    const identity = getRepoIdentity(repo);
+    const identityAssets = repo.assets.filter((asset) => {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      return asset.type === "Image" && metadata.includes("identity");
+    });
+
+    return countList([
+      hasText(identity.logos) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("logo")),
+      hasText(identity.icons) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("icon")),
+      hasText(identity.elements) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("element")),
+      hasText(identity.usage),
+    ]);
+  }
+
+  if (tab === "Imagery") {
+    const hasImagery = repo.assets.some((asset) => {
+      const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
+      return asset.type === "Image" && (haystack.includes("imagery") || haystack.includes("photo"));
+    });
+    return countList([hasImagery]);
+  }
+
+  if (tab === "Colors") {
+    const colors = getRepoColors(repo);
+    return countList([colors.length > 0, colors.some((color) => isCompleteHexColor(color.hex)), hasText(getRepoColorRules(repo))]);
+  }
+
+  if (tab === "Voice & Tone") {
+    return countList([
+      repo.brand.voice.length > 0,
+      repo.brand.rules.length > 0,
+      repo.brand.approvedTerms.length > 0,
+      repo.brand.prohibitedTerms.length > 0,
+    ]);
+  }
+
+  if (tab === "Typography") {
+    const typography = getRepoTypography(repo);
+    return countList([typography.fontNames.length > 0, typography.weights.length > 0, hasText(typography.usageRules)]);
+  }
+
+  if (tab === "Messaging") {
+    const message = repo.messaging[0];
+    const audience = repo.audiences[0];
+    return countList([
+      hasText(message?.valueProps[0] ?? message?.positioning),
+      Boolean(message?.keyMessages.length),
+      hasText(audience?.name),
+      hasText(audience?.painPoints[0]),
+      Boolean(message?.proofPoints.length),
+      hasText(message?.taglines[0]),
+    ]);
+  }
+
+  if (tab === "Audiences") {
+    const audiences = getRepoAudienceSettings(repo);
+    return countList([
+      hasText(audiences.primaryAudience),
+      hasText(audiences.secondaryAudiences),
+      hasText(audiences.coreJobs),
+      hasText(audiences.painPoints),
+      hasText(audiences.customerWants),
+    ]);
+  }
+
+  if (tab === "Channel SEO") {
+    const channelSeo = getRepoChannelSeo(repo);
+    return countList([
+      hasText(channelSeo.outputDefaults),
+      hasText(channelSeo.blog),
+      hasText(channelSeo.linkedin),
+      hasText(channelSeo.x),
+      hasText(channelSeo.instagram),
+      hasText(channelSeo.seoPlanning),
+      hasText(channelSeo.keywords),
+      hasText(channelSeo.successMetrics),
+    ]);
+  }
+
+  return { filled: 0, total: 1 };
+}
+
+export function getRepoCompleteness(repo: RepoState) {
+  const sections = repoTabs.map((tab) => {
+    const completeness = getRepoSectionCompleteness(repo, tab);
+    const percentage = completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 0;
+    return {
+      tab,
+      key: sectionKey(tab),
+      title: tab,
+      markdownFileName: sectionMarkdownFileName(tab),
+      ...completeness,
+      percentage,
+      mostlyFilled: percentage >= 70,
+    };
+  });
+  const total = sections.reduce((sum, section) => sum + section.total, 0);
+  const filled = sections.reduce((sum, section) => sum + section.filled, 0);
+
+  return {
+    sections,
+    filled,
+    total,
+    percentage: total ? Math.round((filled / total) * 100) : 0,
+  };
+}
+
+export function getRepoAssetCounts(repo: RepoState) {
+  return repo.assets.reduce<Record<RepoAssetKind, number>>(
+    (counts, asset) => {
+      const kind = classifyRepoAsset(asset);
+      counts[kind] += 1;
+      return counts;
+    },
+    {
+      logo: 0,
+      icon: 0,
+      element: 0,
+      imagery: 0,
+      generated: 0,
+      document: 0,
+      other: 0,
+    },
+  );
+}
+
+export function getRepoSummary(workspace: WorkspaceState): RepoSummary {
+  return {
+    id: workspace.id,
+    name: workspace.name || workspace.repo.company.name || "Untitled repo",
+    slug: stableSlug(workspace.name || workspace.repo.company.name),
+    websiteUrl: workspace.repo.company.website || undefined,
+    completeness: getRepoCompleteness(workspace.repo),
+    assetCounts: getRepoAssetCounts(workspace.repo),
+  };
+}
+
 function truncateMarkdown(markdown: string, maxLength: number) {
   if (markdown.length <= maxLength) return markdown;
   return `${markdown.slice(0, maxLength).trimEnd()}\n\n[Truncated by BrandRepo context limit.]`;
@@ -536,4 +724,3 @@ export function searchRepoContext(context: RepoContext, query: string) {
 
   return [...sectionMatches, ...assetMatches].slice(0, 12);
 }
-

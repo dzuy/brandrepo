@@ -1,4 +1,4 @@
-import { getRepoContext, getSectionByKey, searchRepoContext } from "./repo-context";
+import { getRepoContext, getRepoSummary, getSectionByKey, searchRepoContext } from "./repo-context";
 import { WorkspaceState } from "./repo-model";
 
 type JsonRpcRequest = {
@@ -12,6 +12,11 @@ type ToolCallParams = {
   name?: string;
   arguments?: Record<string, unknown>;
 };
+
+const mcpTextResponseLimit = 28000;
+const mcpRepoContextMarkdownLimit = 18000;
+const mcpSectionMarkdownLimit = 12000;
+const mcpSearchMarkdownLimit = 6000;
 
 function jsonRpcResult(id: JsonRpcRequest["id"], result: unknown) {
   return {
@@ -32,12 +37,18 @@ function jsonRpcError(id: JsonRpcRequest["id"], code: number, message: string) {
   };
 }
 
-function textContent(payload: unknown) {
+function truncateText(text: string, limit = mcpTextResponseLimit) {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}\n\n[Truncated by BrandRepo MCP response limit.]`;
+}
+
+function textContent(payload: unknown, limit = mcpTextResponseLimit) {
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return {
     content: [
       {
         type: "text",
-        text: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
+        text: truncateText(text, limit),
       },
     ],
   };
@@ -52,10 +63,29 @@ function findWorkspaceForTool(workspaces: WorkspaceState[], repoId: string) {
   return workspaces.find((workspace) => workspace.id === repoId || workspace.name.toLowerCase() === repoId.toLowerCase());
 }
 
+function repoSelectionGuidance(workspaces: WorkspaceState[]) {
+  return {
+    error: "Repo not found.",
+    guidance: "Call list_repos first and use one of the returned repo ids as repo_id.",
+    availableRepos: workspaces.map((workspace) => {
+      const summary = getRepoSummary(workspace);
+      return {
+        id: summary.id,
+        name: summary.name,
+        slug: summary.slug,
+      };
+    }),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 export const brandRepoMcpTools = [
   {
     name: "list_repos",
-    description: "List BrandRepo repos available to the authenticated user.",
+    description: "List BrandRepo repos available to the authenticated user, including ids, slugs, completion, and asset counts.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -64,7 +94,7 @@ export const brandRepoMcpTools = [
   },
   {
     name: "get_repo_overview",
-    description: "Return metadata and section names for a BrandRepo repo.",
+    description: "Return repo metadata, section completeness, and asset counts for a BrandRepo repo.",
     inputSchema: {
       type: "object",
       properties: {
@@ -143,31 +173,27 @@ export const brandRepoMcpTools = [
 function callTool(name: string, args: Record<string, unknown>, workspaces: WorkspaceState[]) {
   if (name === "list_repos") {
     return textContent({
-      repos: workspaces.map((workspace) => {
-        const context = getRepoContext(workspace, { includeAssets: false, maxMarkdownLength: 1 });
-        return context.repo;
-      }),
+      guidance: "Use one of these ids as repo_id in other BrandRepo MCP tools.",
+      repos: workspaces.map((workspace) => getRepoSummary(workspace)),
     });
   }
 
   const repoId = getStringArgument(args, "repo_id");
+
+  if (!repoId) {
+    return textContent({
+      error: "repo_id is required.",
+      guidance: "Call list_repos first and use one of the returned repo ids as repo_id.",
+    });
+  }
+
   const workspace = findWorkspaceForTool(workspaces, repoId);
+  if (!workspace) return textContent(repoSelectionGuidance(workspaces));
 
-  if (!repoId) return textContent({ error: "repo_id is required." });
-  if (!workspace) return textContent({ error: "Repo not found." });
-
-  const context = getRepoContext(workspace, { includeAssets: true });
+  const context = getRepoContext(workspace, { includeAssets: true, maxMarkdownLength: mcpRepoContextMarkdownLimit });
 
   if (name === "get_repo_overview") {
-    return textContent({
-      repo: context.repo,
-      sections: context.sections.map((section) => ({
-        key: section.key,
-        title: section.title,
-        markdownFileName: section.markdownFileName,
-      })),
-      assetCount: context.assets.length,
-    });
+    return textContent(getRepoSummary(workspace));
   }
 
   if (name === "get_repo_context") {
@@ -177,14 +203,14 @@ function callTool(name: string, args: Record<string, unknown>, workspaces: Works
   if (name === "get_section_markdown") {
     const section = getSectionByKey(getStringArgument(args, "section"));
     const match = section ? context.sections.find((item) => item.title === section) : null;
-    return textContent(match ?? { error: "Section not found." });
+    return textContent(match ?? { error: "Section not found." }, mcpSectionMarkdownLimit);
   }
 
   if (name === "search_repo") {
     return textContent({
       query: getStringArgument(args, "query"),
       results: searchRepoContext(context, getStringArgument(args, "query")),
-    });
+    }, mcpSearchMarkdownLimit);
   }
 
   if (name === "list_assets") {
@@ -199,33 +225,42 @@ function callTool(name: string, args: Record<string, unknown>, workspaces: Works
     return textContent(context.assets.find((asset) => asset.id === assetId) ?? { error: "Asset not found." });
   }
 
-  return textContent({ error: `Unknown tool: ${name}` });
+  return textContent({ error: "Unknown tool." });
 }
 
 export function handleBrandRepoMcpRequest(message: JsonRpcRequest, workspaces: WorkspaceState[]) {
-  if (message.method === "initialize") {
-    return jsonRpcResult(message.id, {
-      protocolVersion: "2024-11-05",
-      capabilities: {
-        tools: {},
-      },
-      serverInfo: {
-        name: "brandrepo",
-        version: "0.1.0",
-      },
-    });
-  }
+  try {
+    if (message.jsonrpc && message.jsonrpc !== "2.0") {
+      return jsonRpcError(message.id, -32600, "Invalid JSON-RPC version.");
+    }
 
-  if (message.method === "tools/list") {
-    return jsonRpcResult(message.id, { tools: brandRepoMcpTools });
-  }
+    if (message.method === "initialize") {
+      return jsonRpcResult(message.id, {
+        protocolVersion: "2024-11-05",
+        capabilities: {
+          tools: {},
+        },
+        serverInfo: {
+          name: "brandrepo",
+          version: "0.1.0",
+        },
+      });
+    }
 
-  if (message.method === "tools/call") {
-    const params = (message.params ?? {}) as ToolCallParams;
-    if (!params.name) return jsonRpcError(message.id, -32602, "Missing tool name.");
-    return jsonRpcResult(message.id, callTool(params.name, params.arguments ?? {}, workspaces));
-  }
+    if (message.method === "tools/list") {
+      return jsonRpcResult(message.id, { tools: brandRepoMcpTools });
+    }
 
-  return jsonRpcError(message.id, -32601, `Unsupported method: ${message.method ?? "unknown"}`);
+    if (message.method === "tools/call") {
+      const params = isRecord(message.params) ? (message.params as ToolCallParams) : {};
+      if (!params.name) return jsonRpcError(message.id, -32602, "Missing tool name.");
+      if (!brandRepoMcpTools.some((tool) => tool.name === params.name)) return jsonRpcError(message.id, -32601, "Unknown tool.");
+      if (params.arguments !== undefined && !isRecord(params.arguments)) return jsonRpcError(message.id, -32602, "Tool arguments must be an object.");
+      return jsonRpcResult(message.id, callTool(params.name, params.arguments ?? {}, workspaces));
+    }
+
+    return jsonRpcError(message.id, -32601, "Unsupported method.");
+  } catch {
+    return jsonRpcError(message.id, -32603, "Internal MCP error.");
+  }
 }
-
