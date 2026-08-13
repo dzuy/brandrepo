@@ -7,7 +7,7 @@ This document defines BrandRepo's V1 integration-token approach for external API
 Integration tokens bridge the gap between:
 
 - temporary Supabase session bearer tokens used for local debugging
-- future OAuth account-connection flows
+- OAuth account-connection flows now used for production connectors
 
 They give external clients a stable bearer token without exposing Supabase anon keys or raw user sessions.
 
@@ -126,7 +126,7 @@ Raw token values are never logged.
 - No token expiration UI yet.
 - No per-repo scoping yet.
 - No audit log UI yet.
-- No OAuth connection flow yet.
+- OAuth is now implemented separately for production connectors; integration tokens remain the developer testing path.
 - No write scopes are active.
 
 ## Acceptance

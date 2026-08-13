@@ -278,7 +278,7 @@ Call `list_repos` first and use one of the returned repo ids.
 
 ## Next Evolution
 
-The next production version should replace manually copied integration tokens with OAuth-based account connection.
+Production external connectors should use the OAuth flow documented in `docs/oauth-connectors.md`. Manually copied integration tokens remain available for developer testing.
 
 Future write behavior should use:
 

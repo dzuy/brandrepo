@@ -1,19 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { RepoAccessError } from "./access-errors";
 import { hashIntegrationToken, IntegrationTokenRow, isIntegrationToken } from "./integration-tokens";
+import { isOAuthAccessToken, loadOAuthAccessToken } from "./oauth";
 import { WorkspaceRow, WorkspaceState } from "./repo-model";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-export class RepoAccessError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
 
 export function getBearerToken(request: Request) {
   const header = request.headers.get("authorization") ?? "";
@@ -140,6 +133,25 @@ async function loadWorkspacesByIntegrationToken(token: string, request: Request)
   return loadWorkspacesByUserId(integrationToken.user_id);
 }
 
+async function loadWorkspacesByOAuthAccessToken(token: string, request: Request) {
+  const { accessToken, serviceSupabase } = await loadOAuthAccessToken(token);
+
+  try {
+    const url = new URL(request.url);
+    await serviceSupabase.from("brandrepo_integration_access_logs").insert({
+      user_id: accessToken.user_id,
+      integration_token_id: null,
+      method: request.method,
+      path: url.pathname,
+      user_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
+    });
+  } catch {
+    // Audit logs should not break otherwise valid read-only OAuth calls.
+  }
+
+  return loadWorkspacesByUserId(accessToken.user_id);
+}
+
 export async function loadAuthenticatedWorkspaces(request: Request): Promise<WorkspaceState[]> {
   if (!supabaseUrl || !supabasePublishableKey) {
     throw new RepoAccessError("Supabase is not configured.", 500);
@@ -152,6 +164,10 @@ export async function loadAuthenticatedWorkspaces(request: Request): Promise<Wor
 
   if (isIntegrationToken(token)) {
     return loadWorkspacesByIntegrationToken(token, request);
+  }
+
+  if (isOAuthAccessToken(token)) {
+    return loadWorkspacesByOAuthAccessToken(token, request);
   }
 
   const { authenticatedSupabase, user } = await authenticateSupabaseRequest(request);

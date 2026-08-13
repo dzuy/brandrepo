@@ -178,8 +178,8 @@ Current app authentication is handled through Supabase Auth. See `docs/auth-setu
 
 Recommended path:
 
-1. Prototype with scoped integration tokens.
-2. Move to OAuth before broader testing.
+1. Keep scoped integration tokens for developer testing.
+2. Use OAuth for production external connectors.
 3. Use short-lived access tokens for tool calls.
 4. Scope tokens by account, repo, and permission level.
 
@@ -191,17 +191,19 @@ Permission scopes should be explicit:
 - `assets:write`
 - `drafts:write`
 
-For ChatGPT, users should connect their BrandRepo account and grant access. The MCP server should validate that token on every request.
+For Claude, ChatGPT, Canva, Gamma, Figma, and similar platforms, users should connect their BrandRepo account and grant access. The MCP server should validate that token on every request.
 
 Current V1 implementation:
 
 - Integration tokens are generated in Settings.
 - Raw tokens are shown once and stored only as SHA-256 hashes in Supabase.
 - V1 tokens use read scopes: `repo:read` and `assets:read`.
+- OAuth connectors use authorization code with PKCE, dynamic client registration, short-lived access tokens, refresh tokens, and revocation.
+- OAuth connector access is read-only with `repo:read` and `assets:read`.
 - MCP/API token validation requires `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in the server environment.
 - Supabase session bearer tokens remain available for local debugging through the temporary Developer token view.
 
-The implementation details and acceptance criteria for integration tokens are documented in `docs/integration-token-architecture.md`.
+The production OAuth connector implementation is documented in `docs/oauth-connectors.md`. The developer-token implementation details and acceptance criteria are documented in `docs/integration-token-architecture.md`.
 
 ## Read vs. Write Policy
 

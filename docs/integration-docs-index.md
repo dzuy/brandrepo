@@ -14,6 +14,11 @@ Use these docs as the source of truth for integrations.
 
 ## Auth and Tokens
 
+- `docs/oauth-connectors.md`
+  - Production OAuth connector architecture.
+  - Claude custom connector setup.
+  - OAuth discovery, dynamic registration, token, and revocation endpoints.
+
 - `docs/auth-setup.md`
   - Supabase auth setup.
   - Google OAuth setup.
@@ -26,7 +31,7 @@ Use these docs as the source of truth for integrations.
   - Hashing and storage model.
   - Scopes.
   - Validation path.
-  - Current limitations.
+  - Developer-testing limitations.
 
 ## MCP Testing and Connection
 

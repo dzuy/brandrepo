@@ -18,24 +18,37 @@ async function transpileModule(sourcePath, outputName) {
       verbatimModuleSyntax: false,
     },
   }).outputText;
-  const rewritten = transpiled
+  let rewritten = transpiled
+    .replaceAll('from "./access-errors"', 'from "./access-errors.js"')
+    .replaceAll('from "./integration-tokens"', 'from "./integration-tokens.js"')
+    .replaceAll('from "./oauth"', 'from "./oauth.js"')
     .replaceAll('from "./repo-model"', 'from "./repo-model.js"')
     .replaceAll('from "./repo-context"', 'from "./repo-context.js"');
+  if (sourcePath === "lib/oauth.ts") {
+    rewritten = rewritten.replace(
+      'import { createClient } from "@supabase/supabase-js";',
+      "const createClient = () => { throw new Error('Supabase client is not available in unit tests.'); };",
+    );
+  }
   await writeFile(path.join(outDir, outputName), rewritten);
 }
 
 async function loadLibraries() {
   await mkdir(outDir, { recursive: true });
+  await transpileModule("lib/access-errors.ts", "access-errors.js");
   await transpileModule("lib/repo-model.ts", "repo-model.js");
   await transpileModule("lib/repo-context.ts", "repo-context.js");
+  await transpileModule("lib/integration-tokens.ts", "integration-tokens.js");
+  await transpileModule("lib/oauth.ts", "oauth.js");
   await transpileModule("lib/mcp.ts", "mcp.js");
 
   const cacheBust = `?v=${Date.now()}`;
   const repoModel = await import(`file://${path.join(outDir, "repo-model.js")}${cacheBust}`);
   const repoContext = await import(`file://${path.join(outDir, "repo-context.js")}${cacheBust}`);
+  const oauth = await import(`file://${path.join(outDir, "oauth.js")}${cacheBust}`);
   const mcp = await import(`file://${path.join(outDir, "mcp.js")}${cacheBust}`);
 
-  return { repoModel, repoContext, mcp };
+  return { repoModel, repoContext, oauth, mcp };
 }
 
 function sampleWorkspace(initialRepo) {
@@ -177,6 +190,26 @@ test("repo context enforces markdown size limits", async () => {
 
   assert.ok(context.markdown.length < 220);
   assert.match(context.markdown, /Truncated by BrandRepo context limit/);
+});
+
+test("OAuth helpers expose Claude-compatible metadata and PKCE validation", async () => {
+  const { oauth } = await loadLibraries();
+  const baseUrl = "https://www.brandrepo.dev";
+  const metadata = oauth.oauthMetadata(baseUrl);
+  const protectedResource = oauth.protectedResourceMetadata(baseUrl);
+
+  assert.equal(metadata.issuer, baseUrl);
+  assert.equal(metadata.authorization_endpoint, `${baseUrl}/oauth/authorize`);
+  assert.equal(metadata.token_endpoint, `${baseUrl}/api/oauth/token`);
+  assert.equal(metadata.registration_endpoint, `${baseUrl}/api/oauth/register`);
+  assert.deepEqual(metadata.code_challenge_methods_supported, ["S256"]);
+  assert.equal(protectedResource.resource, `${baseUrl}/api/mcp`);
+  assert.deepEqual(protectedResource.authorization_servers, [baseUrl]);
+
+  const verifier = "brandrepo-oauth-test-verifier";
+  const challenge = await oauth.pkceChallengeForVerifier(verifier);
+  assert.equal(await oauth.verifyPkce(verifier, challenge, "S256"), true);
+  assert.equal(await oauth.verifyPkce("wrong-verifier", challenge, "S256"), false);
 });
 
 test("read-only MCP tools expose repo context, sections, assets, and search", async () => {
