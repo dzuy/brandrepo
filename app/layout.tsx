@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   title: "BrandRepo",
   description: "A functional Marketing Repo prototype for company context, repo-grounded chat, and campaign content generation.",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
   },
   openGraph: {
     title: "BrandRepo",

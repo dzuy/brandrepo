@@ -40,6 +40,7 @@ import {
 
 type NavSection = "Repo" | "Chat" | "Campaigns" | "Assets" | "Settings";
 type ThemeMode = "dark" | "light";
+type AuthMode = "sign-in" | "sign-up" | "reset-password" | "update-password";
 
 type ImageReferenceAsset = {
   name: string;
@@ -87,6 +88,7 @@ type ImportRun = {
 const storageKey = "brandhub-workspaces-v2";
 const themeStorageKey = "brandrepo-theme-v1";
 const legacyThemeStorageKey = "brandhub-theme-v1";
+const pendingGoogleAccountNameStorageKey = "brandrepo-pending-google-account-name-v1";
 const drawerAnimationMs = 220;
 const assetBucket = "brandhub-assets";
 const chatSavedMessagingSourceLabel = "Chat answer saved to Messaging";
@@ -821,9 +823,10 @@ export default function Home() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(!isSupabaseConfigured);
-  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState("");
   const [authAccountName, setAuthAccountName] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "working" | "success" | "error">("idle");
   const [authError, setAuthError] = useState("");
@@ -874,6 +877,29 @@ export default function Home() {
   const markdownDrawerContent = markdownDrawerSection ? generateSectionMarkdown(repo, markdownDrawerSection) : "";
   const markdownDrawerFileName = markdownDrawerSection ? sectionMarkdownFileName(markdownDrawerSection) : "";
 
+  async function applyPendingGoogleAccountName(user: User | null) {
+    if (!supabase || !user || getAccountName(user)) return user;
+
+    const pendingAccountName = normalizeAccountName(window.localStorage.getItem(pendingGoogleAccountNameStorageKey) ?? "");
+    if (!isValidAccountName(pendingAccountName)) return user;
+
+    const { data, error } = await supabase.auth.updateUser({
+      data: {
+        ...(user.user_metadata ?? {}),
+        account_name: pendingAccountName,
+      },
+    });
+
+    if (error) {
+      setSettingsStatus("error");
+      setSettingsError(error.message);
+      return user;
+    }
+
+    window.localStorage.removeItem(pendingGoogleAccountNameStorageKey);
+    return data.user ?? user;
+  }
+
   useEffect(() => {
     const themeTimer = window.setTimeout(() => {
       const storedTheme = window.localStorage.getItem(themeStorageKey) ?? window.localStorage.getItem(legacyThemeStorageKey);
@@ -895,24 +921,40 @@ export default function Home() {
   useEffect(() => {
     if (!supabase) return;
 
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUser(data.user ?? null);
-      setSettingsAccountName(getAccountName(data.user ?? null));
+    const recoveryParams = new URLSearchParams(`${window.location.search.replace(/^\?/, "")}&${window.location.hash.replace(/^#/, "")}`);
+    let recoveryModeTimer: ReturnType<typeof window.setTimeout> | null = null;
+    if (recoveryParams.get("type") === "recovery") {
+      recoveryModeTimer = window.setTimeout(() => setAuthMode("update-password"), 0);
+    }
+
+    supabase.auth.getUser().then(async ({ data }) => {
+      const user = await applyPendingGoogleAccountName(data.user ?? null);
+      setCurrentUser(user ?? null);
+      setSettingsAccountName(getAccountName(user ?? null));
       setCloudHydrated(false);
       setAuthChecked(true);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
-      setSettingsAccountName(getAccountName(session?.user ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const user = await applyPendingGoogleAccountName(session?.user ?? null);
+      setCurrentUser(user ?? null);
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("update-password");
+        setAuthStatus("idle");
+        setAuthError("");
+      }
+      setSettingsAccountName(getAccountName(user ?? null));
       setSettingsStatus("idle");
       setSettingsError("");
       setCloudHydrated(false);
       setAuthChecked(true);
-      setSyncStatus(session?.user ? "Loading repos..." : "Local only");
+      setSyncStatus(user ? "Loading repos..." : "Local only");
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      if (recoveryModeTimer) window.clearTimeout(recoveryModeTimer);
+      listener.subscription.unsubscribe();
+    };
   }, []);
   useEffect(() => {
     const loadStoredWorkspaces = window.setTimeout(() => {
@@ -1585,7 +1627,54 @@ export default function Home() {
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !authEmail.trim() || !authPassword) return;
+    if (!supabase) return;
+
+    if (authMode === "reset-password") {
+      if (!authEmail.trim()) return;
+      setAuthStatus("working");
+      setAuthError("");
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+        redirectTo: window.location.origin,
+      });
+
+      if (error) {
+        setAuthStatus("error");
+        setAuthError(error.message);
+        return;
+      }
+
+      setAuthStatus("success");
+      return;
+    }
+
+    if (authMode === "update-password") {
+      if (!authPassword || !authPasswordConfirm) return;
+      if (authPassword !== authPasswordConfirm) {
+        setAuthStatus("error");
+        setAuthError("Passwords do not match.");
+        return;
+      }
+
+      setAuthStatus("working");
+      setAuthError("");
+      const { data, error } = await supabase.auth.updateUser({ password: authPassword });
+
+      if (error) {
+        setAuthStatus("error");
+        setAuthError(error.message);
+        return;
+      }
+
+      setCurrentUser(data.user ?? currentUser);
+      setAuthPassword("");
+      setAuthPasswordConfirm("");
+      setAuthMode("sign-in");
+      setAuthStatus("success");
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
+    if (!authEmail.trim() || !authPassword) return;
 
     const accountName = normalizeAccountName(authAccountName);
     if (authMode === "sign-up" && !isValidAccountName(accountName)) {
@@ -1638,6 +1727,37 @@ export default function Home() {
     setAuthError("Sign-in did not return an active session.");
   }
 
+  async function signInWithGoogle() {
+    if (!supabase) return;
+
+    if (authMode === "sign-up") {
+      const accountName = normalizeAccountName(authAccountName);
+      if (!isValidAccountName(accountName)) {
+        setAuthStatus("error");
+        setAuthError("Account name must be 3-40 characters and use lowercase letters, numbers, or hyphens.");
+        return;
+      }
+      window.localStorage.setItem(pendingGoogleAccountNameStorageKey, accountName);
+    } else {
+      window.localStorage.removeItem(pendingGoogleAccountNameStorageKey);
+    }
+
+    setAuthStatus("working");
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setAuthStatus("error");
+      setAuthError(error.message);
+      window.localStorage.removeItem(pendingGoogleAccountNameStorageKey);
+    }
+  }
+
   async function submitAccountSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !currentUser) return;
@@ -1679,10 +1799,12 @@ export default function Home() {
     setSyncStatus("Local only");
   }
 
-  function switchAuthMode(mode: "sign-in" | "sign-up") {
+  function switchAuthMode(mode: AuthMode) {
     setAuthMode(mode);
     setAuthStatus("idle");
     setAuthError("");
+    setAuthPassword("");
+    setAuthPasswordConfirm("");
   }
 
   if (isSupabaseConfigured && !authChecked) {
@@ -1699,7 +1821,30 @@ export default function Home() {
     );
   }
 
-  if (isSupabaseConfigured && !currentUser) {
+  if (isSupabaseConfigured && (!currentUser || authMode === "update-password")) {
+    const authTitle =
+      authMode === "sign-up"
+        ? "Create your BrandRepo account."
+        : authMode === "reset-password"
+          ? "Reset your password."
+          : authMode === "update-password"
+            ? "Choose a new password."
+            : "Sign in to BrandRepo.";
+    const authEyebrow =
+      authMode === "sign-up"
+        ? "Create account"
+        : authMode === "reset-password"
+          ? "Password reset"
+          : authMode === "update-password"
+            ? "Update password"
+            : "Sign in";
+    const authSubtitle =
+      authMode === "reset-password"
+        ? "Enter your email and we will send you a password reset link."
+        : authMode === "update-password"
+          ? "Enter a new password for your account."
+          : "Your repos are saved to the account you use here.";
+
     return (
       <main className="auth-page" data-theme={theme}>
         <section className="auth-card">
@@ -1707,19 +1852,21 @@ export default function Home() {
             <BrandRepoLogo />
           </div>
           <div>
-            <p className="eyebrow">{authMode === "sign-in" ? "Sign in" : "Create account"}</p>
-            <h1>{authMode === "sign-in" ? "Sign in to BrandRepo." : "Create your BrandRepo account."}</h1>
-            <p className="auth-subtitle">Your repos are saved to the account you use here.</p>
+            <p className="eyebrow">{authEyebrow}</p>
+            <h1>{authTitle}</h1>
+            <p className="auth-subtitle">{authSubtitle}</p>
           </div>
           <form className="auth-form" onSubmit={submitAuth}>
-            <div className="auth-mode-toggle" role="group" aria-label="Account mode">
-              <button className={authMode === "sign-in" ? "active" : ""} onClick={() => switchAuthMode("sign-in")} type="button">
-                Sign in
-              </button>
-              <button className={authMode === "sign-up" ? "active" : ""} onClick={() => switchAuthMode("sign-up")} type="button">
-                Create account
-              </button>
-            </div>
+            {authMode !== "update-password" && (
+              <div className="auth-mode-toggle" role="group" aria-label="Account mode">
+                <button className={authMode === "sign-in" ? "active" : ""} onClick={() => switchAuthMode("sign-in")} type="button">
+                  Sign in
+                </button>
+                <button className={authMode === "sign-up" ? "active" : ""} onClick={() => switchAuthMode("sign-up")} type="button">
+                  Create account
+                </button>
+              </div>
+            )}
             {authMode === "sign-up" && (
               <label>
                 Account name
@@ -1733,34 +1880,89 @@ export default function Home() {
                 <span className="form-note">This will become brandrepo.dev/{authAccountName || "account-name"}.</span>
               </label>
             )}
-            <label>
-              Email
-              <input
-                autoComplete="email"
-                onChange={(event) => setAuthEmail(event.target.value)}
-                placeholder="you@example.com"
-                type="email"
-                value={authEmail}
-              />
-            </label>
-            <label>
-              Password
-              <input
-                autoComplete={authMode === "sign-in" ? "current-password" : "new-password"}
-                minLength={6}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                placeholder="Password"
-                type="password"
-                value={authPassword}
-              />
-            </label>
+            {authMode !== "update-password" && (
+              <label>
+                Email
+                <input
+                  autoComplete="email"
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  type="email"
+                  value={authEmail}
+                />
+              </label>
+            )}
+            {authMode !== "reset-password" && (
+              <label>
+                {authMode === "update-password" ? "New password" : "Password"}
+                <input
+                  autoComplete={authMode === "sign-in" ? "current-password" : "new-password"}
+                  minLength={6}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder={authMode === "update-password" ? "New password" : "Password"}
+                  required
+                  type="password"
+                  value={authPassword}
+                />
+              </label>
+            )}
+            {authMode === "update-password" && (
+              <label>
+                Confirm new password
+                <input
+                  autoComplete="new-password"
+                  minLength={6}
+                  onChange={(event) => setAuthPasswordConfirm(event.target.value)}
+                  placeholder="Confirm new password"
+                  required
+                  type="password"
+                  value={authPasswordConfirm}
+                />
+              </label>
+            )}
             <button disabled={authStatus === "working"} type="submit">
-              {authStatus === "working" ? "Working..." : authMode === "sign-in" ? "Sign in" : "Create account"}
+              {authStatus === "working"
+                ? "Working..."
+                : authMode === "sign-up"
+                  ? "Create account"
+                  : authMode === "reset-password"
+                    ? "Send reset link"
+                    : authMode === "update-password"
+                      ? "Update password"
+                      : "Sign in"}
             </button>
+            {authMode !== "reset-password" && authMode !== "update-password" && (
+              <>
+                <div className="auth-divider">
+                  <span>or</span>
+                </div>
+                <button className="auth-oauth-button" disabled={authStatus === "working"} onClick={signInWithGoogle} type="button">
+                  <span className="google-mark" aria-hidden="true">
+                    G
+                  </span>
+                  Continue with Google
+                </button>
+              </>
+            )}
             {authStatus === "success" && authMode === "sign-up" && (
               <span>Account created. If email confirmation is enabled, check your email before signing in.</span>
             )}
+            {authStatus === "success" && authMode === "reset-password" && (
+              <span>If an account exists for that email, a password reset link has been sent.</span>
+            )}
+            {authStatus === "success" && authMode === "sign-in" && <span>Password updated. Sign in with your new password.</span>}
             {authError && <span>{authError}</span>}
+            {authMode === "sign-in" && (
+              <button className="auth-text-button" onClick={() => switchAuthMode("reset-password")} type="button">
+                Forgot password?
+              </button>
+            )}
+            {authMode === "reset-password" && (
+              <button className="auth-text-button" onClick={() => switchAuthMode("sign-in")} type="button">
+                Back to sign in
+              </button>
+            )}
           </form>
         </section>
       </main>
