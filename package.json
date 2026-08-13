@@ -12,11 +12,13 @@
     "rendered-crawler": "node scripts/rendered-crawler.mjs",
     "test": "npm run build && node --test tests/repo-context-mcp.test.mjs tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "build:vercel": "vite build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
     "drizzle-orm": "0.45.2",
+    "nitro": "^3.0.260610-beta",
     "playwright": "^1.62.1",
     "react": "19.2.6",
     "react-dom": "19.2.6"

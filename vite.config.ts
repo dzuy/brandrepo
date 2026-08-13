@@ -1,4 +1,6 @@
 import vinext from "vinext";
+import { nitro } from "nitro/vite";
+import tailwindcss from "@tailwindcss/postcss";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
@@ -40,10 +42,26 @@ export default defineConfig(async () => {
   process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
+  if (process.env.VERCEL || process.env.NITRO_PRESET === "vercel") {
+    return {
+      css: {
+        postcss: {
+          plugins: [tailwindcss()],
+        },
+      },
+      plugins: [vinext(), nitro()],
+    };
+  }
+
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    css: {
+      postcss: {
+        plugins: [tailwindcss()],
+      },
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
