@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent, FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
@@ -128,6 +128,14 @@ type ChannelSeoSettings = {
   successMetrics: string;
 };
 
+type AudienceSettings = {
+  primaryAudience: string;
+  secondaryAudiences: string;
+  coreJobs: string;
+  painPoints: string;
+  customerWants: string;
+};
+
 type IdentitySettings = {
   logos: string;
   icons: string;
@@ -163,6 +171,7 @@ type RepoState = {
   colors: ColorToken[];
   colorRules: string;
   typography: TypographySettings;
+  audienceSettings: AudienceSettings;
   channelSeo: ChannelSeoSettings;
   identity: IdentitySettings;
   sectionUrls: Partial<Record<RepoKind, string[]>>;
@@ -221,13 +230,14 @@ type ImportRun = {
 const storageKey = "brandhub-workspaces-v2";
 const themeStorageKey = "brandrepo-theme-v1";
 const legacyThemeStorageKey = "brandhub-theme-v1";
-const repoNavStorageKey = "brandrepo-repo-nav-expanded-v1";
 const drawerAnimationMs = 220;
 const assetBucket = "brandhub-assets";
 const chatSavedMessagingSourceLabel = "Chat answer saved to Messaging";
 const previousWorkspaceStorageKey = "brandhub-workspaces-v1";
 const singleWorkspaceStorageKey = "brandhub-empty-workspace-v1";
 const legacyStorageKey = "brandhub-v1-prototype";
+const brokenRepoCleanupStorageKey = "brandrepo-cleaned-repo2-nike-v2";
+const brokenRepoNamesToDelete = new Set(["Repo2", "Repo 2", "Nike"]);
 
 const initialRepo: RepoState = {
   company: {
@@ -255,6 +265,13 @@ const initialRepo: RepoState = {
     fontNames: [],
     weights: [],
     usageRules: "",
+  },
+  audienceSettings: {
+    primaryAudience: "",
+    secondaryAudiences: "",
+    coreJobs: "",
+    painPoints: "",
+    customerWants: "",
   },
   channelSeo: {
     outputDefaults: "",
@@ -330,6 +347,7 @@ function createWorkspace(repo: RepoState = initialRepo, name?: string): Workspac
       colors: normalizeColorTokens(repo.colors),
       colorRules: repo.colorRules ?? "",
       typography: normalizeTypographySettings(repo.typography),
+      audienceSettings: normalizeAudienceSettings(repo.audienceSettings),
       channelSeo: normalizeChannelSeoSettings(repo.channelSeo),
       identity: normalizeIdentitySettings(repo.identity),
     },
@@ -515,6 +533,10 @@ function getRepoTypography(repo: RepoState) {
   return normalizeTypographySettings(repo.typography);
 }
 
+function getRepoAudienceSettings(repo: RepoState) {
+  return normalizeAudienceSettings(repo.audienceSettings);
+}
+
 function getRepoChannelSeo(repo: RepoState) {
   return normalizeChannelSeoSettings(repo.channelSeo);
 }
@@ -537,6 +559,16 @@ function normalizeTypographySettings(typography: TypographySettings | undefined)
     fontNames: typography?.fontNames ?? [],
     weights: typography?.weights ?? [],
     usageRules: typography?.usageRules ?? "",
+  };
+}
+
+function normalizeAudienceSettings(audienceSettings: AudienceSettings | undefined) {
+  return {
+    primaryAudience: audienceSettings?.primaryAudience ?? "",
+    secondaryAudiences: audienceSettings?.secondaryAudiences ?? "",
+    coreJobs: audienceSettings?.coreJobs ?? "",
+    painPoints: audienceSettings?.painPoints ?? "",
+    customerWants: audienceSettings?.customerWants ?? "",
   };
 }
 
@@ -804,6 +836,18 @@ function parseTypographyMarkdown(markdown: string) {
   };
 }
 
+function parseAudiencesMarkdown(markdown: string) {
+  const sections = parseMarkdownSections(markdown);
+
+  return {
+    primaryAudience: cleanMarkdownValue(findMarkdownSection(sections, ["primary audience"])),
+    secondaryAudiences: cleanMarkdownValue(findMarkdownSection(sections, ["secondary audiences", "secondary audience"])),
+    coreJobs: cleanMarkdownValue(findMarkdownSection(sections, ["core jobs to be done", "jobs to be done", "jtbd"])),
+    painPoints: cleanMarkdownValue(findMarkdownSection(sections, ["common pain points", "pain points"])),
+    customerWants: cleanMarkdownValue(findMarkdownSection(sections, ["what customers want", "customer wants"])),
+  };
+}
+
 function parseChannelSeoMarkdown(markdown: string) {
   const sections = parseMarkdownSections(markdown);
   const intro = markdown.slice(0, markdown.search(/^##\s+/m) >= 0 ? markdown.search(/^##\s+/m) : 0);
@@ -1023,9 +1067,24 @@ ${markdownLine(message?.taglines[0])}
   }
 
   if (tab === "Audiences") {
+    const audiences = getRepoAudienceSettings(repo);
+
     return `# Audiences
 
-${repo.audiences.length ? repo.audiences.map((audience) => `## ${audience.name}\n\n${markdownLine(audience.description)}\n\n### Needs\n${markdownList(audience.needs)}\n\n### Pain points\n${markdownList(audience.painPoints)}\n\n### Channels\n${markdownList(audience.channels)}`).join("\n\n") : "_No audiences yet._"}
+## Primary Audience
+${markdownLine(audiences.primaryAudience)}
+
+## Secondary Audiences
+${markdownLine(audiences.secondaryAudiences)}
+
+## Core Jobs to Be Done
+${markdownLine(audiences.coreJobs)}
+
+## Common Pain Points
+${markdownLine(audiences.painPoints)}
+
+## What Customers Want
+${markdownLine(audiences.customerWants)}
 
 ## Notes
 ${markdownNotes(notes)}
@@ -1074,6 +1133,14 @@ ${markdownLine(channelSeo.successMetrics)}
 }
 
 function generateRepoMarkdownContext(repo: RepoState) {
+  function assetContextUrl(asset: Asset) {
+    if (!asset.url) return "";
+    if (asset.url.startsWith("data:")) {
+      return asset.storagePath ? "Uploaded file stored in BrandRepo storage." : "Local uploaded file available in BrandRepo.";
+    }
+    return asset.url;
+  }
+
   const sectionMarkdown = repoTabs
     .map((tab) => `--- ${sectionMarkdownFileName(tab)} ---\n${generateSectionMarkdown(repo, tab)}`)
     .join("\n\n");
@@ -1085,7 +1152,7 @@ function generateRepoMarkdownContext(repo: RepoState) {
             `  Type: ${asset.type}`,
             asset.description ? `  Description: ${asset.description}` : "",
             asset.metadata.length ? `  Metadata: ${asset.metadata.join(", ")}` : "",
-            asset.url ? `  URL: ${asset.url}` : "",
+            assetContextUrl(asset) ? `  URL: ${assetContextUrl(asset)}` : "",
           ]
             .filter(Boolean)
             .join("\n"),
@@ -1105,9 +1172,14 @@ function isImageGenerationPrompt(prompt: string) {
 
 function getImageGenerationReferences(repo: RepoState): ImageReferenceAsset[] {
   const priorityTerms = ["logo", "wordmark", "logotype", "identity", "icon", "element"];
+  const maxEmbeddedReferenceLength = 650_000;
 
   return repo.assets
-    .filter((asset) => asset.type === "Image" && asset.url && !asset.metadata.includes("generated"))
+    .filter((asset) => {
+      if (asset.type !== "Image" || !asset.url || asset.metadata.includes("generated")) return false;
+      if (!asset.url.startsWith("data:")) return true;
+      return asset.url.length <= maxEmbeddedReferenceLength;
+    })
     .map((asset) => {
       const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
       const priorityIndex = priorityTerms.findIndex((term) => haystack.includes(term));
@@ -1145,6 +1217,132 @@ function isRepoSectionVisualAsset(asset: Asset) {
   ];
 
   return asset.type === "Image" && sectionTerms.some((term) => haystack.includes(term));
+}
+
+function hasText(value: string | undefined) {
+  return Boolean(value?.trim());
+}
+
+function countList(values: boolean[]) {
+  return {
+    filled: values.filter(Boolean).length,
+    total: values.length,
+  };
+}
+
+function getRepoSectionCompleteness(repo: RepoState, tab: RepoKind) {
+  if (tab === "Brand Basics") {
+    return countList([
+      hasText(repo.company.name),
+      hasText(repo.company.website),
+      hasText(repo.company.description),
+      hasText(repo.brand.description),
+    ]);
+  }
+
+  if (tab === "Identity") {
+    const identity = getRepoIdentity(repo);
+    const identityAssets = repo.assets.filter((asset) => {
+      const metadata = asset.metadata.join(" ").toLowerCase();
+      return asset.type === "Image" && metadata.includes("identity");
+    });
+
+    return countList([
+      hasText(identity.logos) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("logo")),
+      hasText(identity.icons) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("icon")),
+      hasText(identity.elements) || identityAssets.some((asset) => asset.metadata.join(" ").toLowerCase().includes("element")),
+      hasText(identity.usage),
+    ]);
+  }
+
+  if (tab === "Imagery") {
+    const hasImagery = repo.assets.some((asset) => {
+      const haystack = `${asset.name} ${asset.description} ${asset.metadata.join(" ")}`.toLowerCase();
+      return asset.type === "Image" && (haystack.includes("imagery") || haystack.includes("photo"));
+    });
+    return countList([hasImagery]);
+  }
+
+  if (tab === "Colors") {
+    const colors = getRepoColors(repo);
+    return countList([colors.length > 0, colors.some((color) => isCompleteHexColor(color.hex)), hasText(getRepoColorRules(repo))]);
+  }
+
+  if (tab === "Voice & Tone") {
+    return countList([
+      repo.brand.voice.length > 0,
+      repo.brand.rules.length > 0,
+      repo.brand.approvedTerms.length > 0,
+      repo.brand.prohibitedTerms.length > 0,
+    ]);
+  }
+
+  if (tab === "Typography") {
+    const typography = getRepoTypography(repo);
+    return countList([typography.fontNames.length > 0, typography.weights.length > 0, hasText(typography.usageRules)]);
+  }
+
+  if (tab === "Messaging") {
+    const message = repo.messaging[0];
+    const audience = repo.audiences[0];
+    return countList([
+      hasText(message?.valueProps[0] ?? message?.positioning),
+      Boolean(message?.keyMessages.length),
+      hasText(audience?.name),
+      hasText(audience?.painPoints[0]),
+      Boolean(message?.proofPoints.length),
+      hasText(message?.taglines[0]),
+    ]);
+  }
+
+  if (tab === "Audiences") {
+    const audiences = getRepoAudienceSettings(repo);
+    return countList([
+      hasText(audiences.primaryAudience),
+      hasText(audiences.secondaryAudiences),
+      hasText(audiences.coreJobs),
+      hasText(audiences.painPoints),
+      hasText(audiences.customerWants),
+    ]);
+  }
+
+  if (tab === "Channel SEO") {
+    const channelSeo = getRepoChannelSeo(repo);
+    return countList([
+      hasText(channelSeo.outputDefaults),
+      hasText(channelSeo.blog),
+      hasText(channelSeo.linkedin),
+      hasText(channelSeo.x),
+      hasText(channelSeo.instagram),
+      hasText(channelSeo.seoPlanning),
+      hasText(channelSeo.keywords),
+      hasText(channelSeo.successMetrics),
+    ]);
+  }
+
+  return { filled: 0, total: 1 };
+}
+
+function getRepoCompleteness(repo: RepoState) {
+  const sections = repoTabs.map((tab) => {
+    const completeness = getRepoSectionCompleteness(repo, tab);
+    const percentage = completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 0;
+    return {
+      tab,
+      ...completeness,
+      percentage,
+      mostlyFilled: percentage >= 70,
+    };
+  });
+  const total = sections.reduce((sum, item) => sum + item.total, 0);
+  const filled = sections.reduce((sum, item) => sum + item.filled, 0);
+
+  return {
+    sections,
+    filled,
+    total,
+    percentage: total ? Math.round((filled / total) * 100) : 0,
+  };
 }
 
 function sourceDocumentsToSectionUrls(sources: SourceDocument[]) {
@@ -1195,6 +1393,7 @@ export default function Home() {
   const [colorsStatus, setColorsStatus] = useState("Auto saved.");
   const [typographyStatus, setTypographyStatus] = useState("Auto saved.");
   const [channelSeoStatus, setChannelSeoStatus] = useState("Auto saved.");
+  const [audiencesStatus, setAudiencesStatus] = useState("Auto saved.");
   const [identityStatus, setIdentityStatus] = useState("Auto saved.");
   const [voiceToneStatus, setVoiceToneStatus] = useState("Auto saved.");
   const [messagingStatus, setMessagingStatus] = useState("Auto saved.");
@@ -1206,12 +1405,13 @@ export default function Home() {
   const [importError, setImportError] = useState("");
   const [sectionScanUrl, setSectionScanUrl] = useState("");
   const [lastSectionScan, setLastSectionScan] = useState<{ tab: RepoKind; url: string } | null>(null);
-  const [repoNavExpanded, setRepoNavExpanded] = useState(true);
-  const [repoNavPreferenceReady, setRepoNavPreferenceReady] = useState(false);
+  const [repoOverviewActive, setRepoOverviewActive] = useState(true);
   const [identityExpanded, setIdentityExpanded] = useState(true);
   const [identityField, setIdentityField] = useState<IdentityField>("logos");
   const [markdownDrawerSection, setMarkdownDrawerSection] = useState<RepoKind | null>(null);
   const [markdownDrawerOpen, setMarkdownDrawerOpen] = useState(false);
+  const [newRepoModalOpen, setNewRepoModalOpen] = useState(false);
+  const [newRepoName, setNewRepoName] = useState("");
   const [messagingImportDrawerOpen, setMessagingImportDrawerOpen] = useState(false);
   const [messagingImportDrawerMounted, setMessagingImportDrawerMounted] = useState(false);
   const [messagingImportDraft, setMessagingImportDraft] = useState("");
@@ -1238,27 +1438,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const repoNavTimer = window.setTimeout(() => {
-      const storedPreference = window.localStorage.getItem(repoNavStorageKey);
-      if (storedPreference === "collapsed") {
-        setRepoNavExpanded(false);
-      }
-      setRepoNavPreferenceReady(true);
-    }, 0);
-
-    return () => window.clearTimeout(repoNavTimer);
-  }, []);
-
-  useEffect(() => {
     if (!themePreferenceReady) return;
     window.localStorage.setItem(themeStorageKey, theme);
     window.localStorage.removeItem(legacyThemeStorageKey);
   }, [theme, themePreferenceReady]);
-
-  useEffect(() => {
-    if (!repoNavPreferenceReady) return;
-    window.localStorage.setItem(repoNavStorageKey, repoNavExpanded ? "expanded" : "collapsed");
-  }, [repoNavExpanded, repoNavPreferenceReady]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1385,6 +1568,16 @@ export default function Home() {
   }, [repo.typography, typographyStatus]);
 
   useEffect(() => {
+    if (audiencesStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setAudiencesStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [audiencesStatus, repo.audienceSettings]);
+
+  useEffect(() => {
     if (channelSeoStatus !== "Saving...") return;
 
     const saveTimer = window.setTimeout(() => {
@@ -1475,6 +1668,70 @@ export default function Home() {
     return () => window.clearTimeout(saveTimer);
   }, [cloudHydrated, currentUser, persistenceReady, workspaces]);
 
+  useEffect(() => {
+    if (!persistenceReady || !cloudHydrated) return;
+    if (window.localStorage.getItem(brokenRepoCleanupStorageKey) === "complete") return;
+
+    const reposToDelete = workspaces.filter((workspace) => {
+      const repoName = workspace.name.trim();
+      const brandName = workspace.repo.company.name.trim();
+      return brokenRepoNamesToDelete.has(repoName) || brokenRepoNamesToDelete.has(brandName);
+    });
+
+    if (!reposToDelete.length) {
+      window.localStorage.setItem(brokenRepoCleanupStorageKey, "complete");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function deleteBrokenRepos() {
+      setSyncStatus("Deleting repos...");
+      const deleteIds = reposToDelete.map((workspace) => workspace.id);
+
+      if (supabase && currentUser) {
+        const { error } = await supabase
+          .from("brandhub_workspaces")
+          .delete()
+          .eq("user_id", currentUser.id)
+          .in("id", deleteIds);
+
+        if (error) {
+          setSyncStatus(`Delete failed: ${error.message}`);
+          return;
+        }
+      }
+
+      if (cancelled) return;
+
+      setWorkspaces((current) => {
+        const filtered = current.filter((workspace) => !deleteIds.includes(workspace.id));
+        const fallback = filtered[0] ?? createWorkspace();
+        const nextActiveId = filtered.some((workspace) => workspace.id === activeWorkspaceId) ? activeWorkspaceId : fallback.id;
+        const nextWorkspaces = filtered.length ? filtered : [fallback];
+
+        setActiveWorkspaceId(nextActiveId);
+        window.localStorage.setItem(storageKey, JSON.stringify({ activeWorkspaceId: nextActiveId, workspaces: nextWorkspaces }));
+        const selected = nextWorkspaces.find((workspace) => workspace.id === nextActiveId) ?? nextWorkspaces[0];
+        setCompanyDraft(selected.repo.company);
+        setImportRun(null);
+        setImportStatus("idle");
+        setImportError("");
+        setRepoOverviewActive(true);
+
+        return nextWorkspaces;
+      });
+      setSyncStatus(supabase && currentUser ? "Synced to Supabase" : "Local only");
+      window.localStorage.setItem(brokenRepoCleanupStorageKey, "complete");
+    }
+
+    void deleteBrokenRepos();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, cloudHydrated, currentUser, persistenceReady, workspaces]);
+
   function updateActiveWorkspace(updater: (workspace: WorkspaceState) => WorkspaceState) {
     setWorkspaces((current) => current.map((workspace) => (workspace.id === activeWorkspace?.id ? updater(workspace) : workspace)));
   }
@@ -1562,6 +1819,12 @@ export default function Home() {
     }, drawerAnimationMs);
   }
 
+  function showRepoSection(tab: RepoKind) {
+    setSection("Repo");
+    setRepoTab(tab);
+    setRepoOverviewActive(false);
+  }
+
   function saveSectionMarkdownImport() {
     if (markdownImportSection === "Identity") {
       const parsed = parseIdentityMarkdown(messagingImportDraft);
@@ -1579,7 +1842,7 @@ export default function Home() {
         activity: ["Imported Identity Markdown", ...current.activity],
       }));
       closeMessagingImportDrawer();
-      setRepoTab("Identity");
+      showRepoSection("Identity");
       return;
     }
 
@@ -1597,7 +1860,7 @@ export default function Home() {
         activity: ["Imported Colors Markdown", ...current.activity],
       }));
       closeMessagingImportDrawer();
-      setRepoTab("Colors");
+      showRepoSection("Colors");
       return;
     }
 
@@ -1624,7 +1887,7 @@ export default function Home() {
         activity: ["Imported Voice & Tone Markdown", ...current.activity],
       }));
       closeMessagingImportDrawer();
-      setRepoTab("Voice & Tone");
+      showRepoSection("Voice & Tone");
       return;
     }
 
@@ -1646,7 +1909,27 @@ export default function Home() {
         activity: ["Imported Typography Markdown", ...current.activity],
       }));
       closeMessagingImportDrawer();
-      setRepoTab("Typography");
+      showRepoSection("Typography");
+      return;
+    }
+
+    if (markdownImportSection === "Audiences") {
+      const parsed = parseAudiencesMarkdown(messagingImportDraft);
+      const hasParsedContent = Object.values(parsed).some(Boolean);
+
+      if (!hasParsedContent) return;
+
+      setAudiencesStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        audienceSettings: {
+          ...getRepoAudienceSettings(current),
+          ...Object.fromEntries(Object.entries(parsed).filter(([, value]) => value)),
+        },
+        activity: ["Imported Audiences Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      showRepoSection("Audiences");
       return;
     }
 
@@ -1666,14 +1949,14 @@ export default function Home() {
         activity: ["Imported Channel SEO Markdown", ...current.activity],
       }));
       closeMessagingImportDrawer();
-      setRepoTab("Channel SEO");
+      showRepoSection("Channel SEO");
       return;
     }
 
     if (markdownImportSection !== "Messaging") {
       addSectionMarkdown(markdownImportSection, messagingImportDraft);
       closeMessagingImportDrawer();
-      setRepoTab(markdownImportSection);
+      showRepoSection(markdownImportSection);
       return;
     }
 
@@ -1734,11 +2017,21 @@ export default function Home() {
       };
     });
     closeMessagingImportDrawer();
-    setRepoTab("Messaging");
+    showRepoSection("Messaging");
   }
 
-  function addWorkspace() {
-    const nextWorkspace = createWorkspace(initialRepo, `Repo ${workspaces.length + 1}`);
+  function addWorkspace(name: string) {
+    const repoName = name.trim();
+    const nextWorkspace = createWorkspace(
+      {
+        ...initialRepo,
+        company: {
+          ...initialRepo.company,
+          name: repoName,
+        },
+      },
+      repoName,
+    );
     setWorkspaces((current) => [...current, nextWorkspace]);
     setActiveWorkspaceId(nextWorkspace.id);
     setCompanyDraft(nextWorkspace.repo.company);
@@ -1751,6 +2044,61 @@ export default function Home() {
     setMessagingImportDrawerMounted(false);
     setSection("Home");
     setRepoTab("Brand Basics");
+    setRepoOverviewActive(true);
+  }
+
+  function openNewRepoModal() {
+    setNewRepoName("");
+    setNewRepoModalOpen(true);
+  }
+
+  function closeNewRepoModal() {
+    setNewRepoModalOpen(false);
+    setNewRepoName("");
+  }
+
+  function submitNewRepo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newRepoName.trim();
+    if (!name) return;
+    addWorkspace(name);
+    closeNewRepoModal();
+  }
+
+  async function deleteActiveWorkspace() {
+    if (!activeWorkspace) return;
+
+    const confirmed = window.confirm(`Delete ${activeWorkspace.name}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const deleteId = activeWorkspace.id;
+    setImportError("");
+    setSyncStatus("Deleting repo...");
+
+    if (supabase && currentUser) {
+      const { error } = await supabase
+        .from("brandhub_workspaces")
+        .delete()
+        .eq("user_id", currentUser.id)
+        .eq("id", deleteId);
+
+      if (error) {
+        setSyncStatus(`Delete failed: ${error.message}`);
+        setImportError(`Unable to delete repo: ${error.message}`);
+        return;
+      }
+    }
+
+    const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== deleteId);
+    const nextWorkspaces = remainingWorkspaces.length ? remainingWorkspaces : [createWorkspace()];
+    const nextWorkspace = nextWorkspaces[0];
+
+    setWorkspaces(nextWorkspaces);
+    setRepoOverviewActive(true);
+    setSection(nextWorkspace.repo.company.name.trim() ? "Repo" : "Home");
+    setRepoTab("Brand Basics");
+    resetTransientWorkspaceState(nextWorkspace, nextWorkspaces);
+    setSyncStatus(supabase && currentUser ? "Synced to Supabase" : "Local only");
   }
 
   function resetTransientWorkspaceState(nextWorkspace: WorkspaceState, availableWorkspaces = workspaces) {
@@ -1773,12 +2121,12 @@ export default function Home() {
     const nextWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
     if (!nextWorkspace) return;
 
-    resetTransientWorkspaceState(nextWorkspace, nextWorkspaces);
+    resetTransientWorkspaceState(nextWorkspace, workspaces);
   }
 
   function handleRepoSelection(workspaceId: string) {
     if (workspaceId === "new-repo") {
-      addWorkspace();
+      openNewRepoModal();
       return;
     }
 
@@ -2111,6 +2459,17 @@ export default function Home() {
         fontNames: field === "fontNames" ? values : getRepoTypography(current).fontNames,
         weights: field === "weights" ? values : getRepoTypography(current).weights,
         usageRules: field === "usageRules" ? value : getRepoTypography(current).usageRules,
+      },
+    }));
+  }
+
+  function updateAudienceField(field: keyof AudienceSettings, value: string) {
+    setAudiencesStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      audienceSettings: {
+        ...getRepoAudienceSettings(current),
+        [field]: value,
       },
     }));
   }
@@ -2639,16 +2998,11 @@ export default function Home() {
             <div className="nav-group" key={item}>
               <div className="nav-row">
                 <button
-                  aria-expanded={item === "Repo" ? repoNavExpanded : undefined}
                   className={section === item ? "active" : ""}
                   onClick={() => {
                     if (item === "Repo") {
-                      if (section === "Repo") {
-                        setRepoNavExpanded((current) => !current);
-                      } else {
-                        setSection("Repo");
-                        setRepoNavExpanded(true);
-                      }
+                      setSection("Repo");
+                      setRepoOverviewActive(true);
                       return;
                     }
                     setSection(item);
@@ -2669,16 +3023,16 @@ export default function Home() {
                   </button>
                 ) : null}
               </div>
-              {item === "Repo" && section === "Repo" && repoNavExpanded && !isNewWorkspace && (
+              {item === "Repo" && !isNewWorkspace && (
                 <div className="repo-subnav">
                   {repoTabs.map((repoSection) => {
                     if (repoSection === "Identity") {
                       return (
                         <div className="repo-subnav-group" key={repoSection}>
                           <button
-                            className={repoTab === repoSection ? "active" : ""}
+                            className={section === "Repo" && !repoOverviewActive && repoTab === repoSection ? "active" : ""}
                             onClick={() => {
-                              setRepoTab(repoSection);
+                              showRepoSection(repoSection);
                               setIdentityExpanded((current) => !current);
                             }}
                             type="button"
@@ -2689,10 +3043,10 @@ export default function Home() {
                             <div className="identity-rail-subnav">
                               {identitySections.map((identitySection) => (
                                 <button
-                                  className={identityField === identitySection.field ? "active" : ""}
+                                  className={section === "Repo" && identityField === identitySection.field ? "active" : ""}
                                   key={identitySection.field}
                                   onClick={() => {
-                                    setRepoTab("Identity");
+                                    showRepoSection("Identity");
                                     setIdentityField(identitySection.field);
                                   }}
                                   type="button"
@@ -2708,9 +3062,11 @@ export default function Home() {
 
                     return (
                       <button
-                        className={repoTab === repoSection ? "active" : ""}
+                        className={section === "Repo" && !repoOverviewActive && repoTab === repoSection ? "active" : ""}
                         key={repoSection}
-                        onClick={() => setRepoTab(repoSection)}
+                        onClick={() => {
+                          showRepoSection(repoSection);
+                        }}
                         type="button"
                       >
                         {repoSection}
@@ -2807,19 +3163,34 @@ export default function Home() {
 
         {section === "Repo" && (
           <div className="repo-view">
-            <header className="topbar repo-upload-header">
-              <button className="secondary" onClick={() => openSectionMarkdownImportDrawer(repoTab)} type="button">
-                Upload .md
-              </button>
-            </header>
+            {!repoOverviewActive ? (
+              <header className="topbar repo-upload-header">
+                <button className="secondary" onClick={() => openSectionMarkdownImportDrawer(repoTab)} type="button">
+                  Upload .md
+                </button>
+              </header>
+            ) : null}
             {isNewWorkspace ? (
               <EmptyState
                 title="Set up this repo first"
-                description="Add a company name and website on Home before reviewing brand guideline sections."
+                description="Add a repo name to start reviewing brand guideline sections."
               />
             ) : null}
             {importError && <p className="import-error">{importError}</p>}
-            {!isNewWorkspace && (
+            {!isNewWorkspace && repoOverviewActive ? (
+              <RepoOverview
+                onDeleteRepo={deleteActiveWorkspace}
+                onSelectSection={(nextTab) => {
+                  setRepoTab(nextTab);
+                  setRepoOverviewActive(false);
+                  if (nextTab === "Identity") {
+                    setIdentityExpanded(true);
+                  }
+                }}
+                repo={repo}
+              />
+            ) : null}
+            {!isNewWorkspace && !repoOverviewActive ? (
               <RepoPanel
                 channelSeoStatus={channelSeoStatus}
                 colorsStatus={colorsStatus}
@@ -2830,7 +3201,6 @@ export default function Home() {
                 onDeleteAsset={deleteAsset}
                 onUpdateAssetDetails={updateAssetDetails}
                 onUploadSectionAssets={(files, tab, assetTag) => void handleUpload(files, undefined, { repoTab: tab, assetTag })}
-                onAddSectionMarkdown={addSectionMarkdown}
                 onDeleteSectionMarkdown={deleteSectionMarkdown}
                 onUpdateSectionMarkdown={updateSectionMarkdown}
                 brandBasicsStatus={brandBasicsStatus}
@@ -2839,6 +3209,8 @@ export default function Home() {
                 lastSectionScan={lastSectionScan}
                 messagingStatus={messagingStatus}
                 onViewMarkdown={openMarkdownDrawer}
+                audiencesStatus={audiencesStatus}
+                onUpdateAudienceField={updateAudienceField}
                 onUpdateChannelSeoField={updateChannelSeoField}
                 onUpdateIdentityField={updateIdentityField}
                 onUpdateTypographyField={updateTypographyField}
@@ -2852,7 +3224,7 @@ export default function Home() {
                 typographyStatus={typographyStatus}
                 voiceToneStatus={voiceToneStatus}
               />
-            )}
+            ) : null}
           </div>
         )}
 
@@ -3066,6 +3438,14 @@ export default function Home() {
           section={markdownDrawerSection}
         />
       ) : null}
+      {newRepoModalOpen ? (
+        <NewRepoModal
+          name={newRepoName}
+          onChange={setNewRepoName}
+          onClose={closeNewRepoModal}
+          onSubmit={submitNewRepo}
+        />
+      ) : null}
       {messagingImportDrawerMounted ? (
         <SectionMarkdownImportDrawer
           isOpen={messagingImportDrawerOpen}
@@ -3081,6 +3461,7 @@ export default function Home() {
 }
 
 function RepoPanel({
+  audiencesStatus,
   brandBasicsStatus,
   channelSeoStatus,
   colorsStatus,
@@ -3089,13 +3470,13 @@ function RepoPanel({
   lastSectionScan,
   messagingStatus,
   onAddColorToken,
-  onAddSectionMarkdown,
   onDeleteAsset,
   onDeleteColorToken,
   onDeleteSectionMarkdown,
   onScanSectionUrl,
-  onUpdateBrandBasics,
   onUpdateAssetDetails,
+  onUpdateAudienceField,
+  onUpdateBrandBasics,
   onUpdateChannelSeoField,
   onUpdateColorRules,
   onUpdateColorToken,
@@ -3112,6 +3493,7 @@ function RepoPanel({
   typographyStatus,
   voiceToneStatus,
 }: {
+  audiencesStatus: string;
   brandBasicsStatus: string;
   channelSeoStatus: string;
   colorsStatus: string;
@@ -3120,12 +3502,12 @@ function RepoPanel({
   lastSectionScan: { tab: RepoKind; url: string } | null;
   messagingStatus: string;
   onAddColorToken: () => void;
-  onAddSectionMarkdown: (tab: RepoKind, markdown: string) => void;
   onDeleteAsset: (assetId: string) => void;
   onDeleteColorToken: (colorId: string) => void;
   onDeleteSectionMarkdown: (tab: RepoKind, index: number) => void;
   onScanSectionUrl: (url: string, tab: RepoKind) => void;
   onUpdateAssetDetails: (assetId: string, field: "name" | "description", value: string) => void;
+  onUpdateAudienceField: (field: keyof AudienceSettings, value: string) => void;
   onUpdateBrandBasics: (field: "name" | "website" | "description" | "about", value: string) => void;
   onUpdateChannelSeoField: (field: keyof ChannelSeoSettings, value: string) => void;
   onUpdateColorRules: (value: string) => void;
@@ -3151,13 +3533,6 @@ function RepoPanel({
 }) {
   const sectionUrls = getRepoSectionUrls(repo, tab);
   const sectionNotes = getRepoSectionNotes(repo, tab);
-  const sectionIntake = (
-    <SectionIntake
-      isCloudReady={Boolean(supabase)}
-      onSaveMarkdown={(markdown) => onAddSectionMarkdown(tab, markdown)}
-      onUpload={(files) => onUploadSectionAssets(files, tab)}
-    />
-  );
   const notes = (
     <SectionNotes
       notes={sectionNotes}
@@ -3600,21 +3975,49 @@ function RepoPanel({
   }
 
   if (tab === "Audiences") {
+    const audiences = getRepoAudienceSettings(repo);
+
     return (
       <section className="repo-panel">
         <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Audiences" />
-        <SectionSources lastSectionScan={lastSectionScan} onScanSectionUrl={onScanSectionUrl} scanningUrl={scanningUrl} tab={tab} urls={sectionUrls} />
-        {sectionIntake}
-        {notes}
-        {repo.audiences.length ? (
-          <ObjectList
-            emptyDescription=""
-            emptyTitle=""
-            items={repo.audiences}
-            title={(item) => item.name}
-            render={(item) => [item.description, ...item.needs, ...item.painPoints, ...item.messaging, ...item.channels].filter(Boolean).join(" ")}
-          />
-        ) : null}
+        <div className="basic-fields">
+          <label>
+            Primary audience
+            <textarea
+              onChange={(event) => onUpdateAudienceField("primaryAudience", event.target.value)}
+              value={audiences.primaryAudience}
+            />
+          </label>
+          <label>
+            Secondary audiences
+            <textarea
+              onChange={(event) => onUpdateAudienceField("secondaryAudiences", event.target.value)}
+              value={audiences.secondaryAudiences}
+            />
+          </label>
+          <label>
+            Core jobs to be done
+            <textarea
+              onChange={(event) => onUpdateAudienceField("coreJobs", event.target.value)}
+              value={audiences.coreJobs}
+            />
+          </label>
+          <label>
+            Common pain points
+            <textarea
+              onChange={(event) => onUpdateAudienceField("painPoints", event.target.value)}
+              value={audiences.painPoints}
+            />
+          </label>
+          <label>
+            What customers want
+            <textarea
+              onChange={(event) => onUpdateAudienceField("customerWants", event.target.value)}
+              value={audiences.customerWants}
+            />
+          </label>
+          <p className="autosave-status">{audiencesStatus}</p>
+        </div>
       </section>
     );
   }
@@ -3687,6 +4090,99 @@ function BrandRepoLogo() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img alt="" className="brand-logo-image brand-logo-image-light" src="/brandrepo-logo-black.png" />
     </span>
+  );
+}
+
+function RepoOverview({
+  onDeleteRepo,
+  onSelectSection,
+  repo,
+}: {
+  onDeleteRepo: () => void;
+  onSelectSection: (tab: RepoKind) => void;
+  repo: RepoState;
+}) {
+  const completeness = getRepoCompleteness(repo);
+
+  return (
+    <section className="repo-panel repo-overview">
+      <header className="repo-overview-header">
+        <div>
+          <h2>Repo overview</h2>
+          <p>{completeness.percentage}% complete across core sections</p>
+        </div>
+        <div className="repo-overview-score" aria-label={`${completeness.percentage}% complete`}>
+          {completeness.percentage}%
+        </div>
+      </header>
+      <div className="repo-progress-track" aria-hidden="true">
+        <span style={{ width: `${completeness.percentage}%` }} />
+      </div>
+      <div className="repo-overview-grid">
+        {completeness.sections.map((section) => (
+          <button className="repo-overview-card" key={section.tab} onClick={() => onSelectSection(section.tab)} type="button">
+            <span className={section.mostlyFilled ? "section-check complete" : "section-check"} aria-hidden="true">
+              {section.mostlyFilled ? "✓" : ""}
+            </span>
+            <span>
+              <strong>{section.tab}</strong>
+              <small>
+                {section.filled} of {section.total} filled
+              </small>
+            </span>
+            <em>{section.percentage}%</em>
+          </button>
+        ))}
+      </div>
+      <footer className="repo-overview-actions">
+        <button className="danger-secondary" onClick={onDeleteRepo} type="button">
+          Delete repo
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+function NewRepoModal({
+  name,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  name: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="modal-layer" role="presentation">
+      <button aria-label="Close new repo modal" className="modal-backdrop" onClick={onClose} type="button" />
+      <form aria-label="Create new repo" className="small-modal" onSubmit={onSubmit}>
+        <header>
+          <h2>New repo</h2>
+          <button aria-label="Close" className="icon-close" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <label>
+          Repo name
+          <input
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="BrandRepo"
+            required
+            value={name}
+          />
+        </label>
+        <footer>
+          <button className="secondary" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button disabled={!name.trim()} type="submit">
+            Save
+          </button>
+        </footer>
+      </form>
+    </div>
   );
 }
 
@@ -3817,56 +4313,6 @@ function SectionSources({
           {lastSectionScan?.tab === tab && lastSectionScan.url === url ? <span>Scan complete</span> : null}
         </div>
       ))}
-    </div>
-  );
-}
-
-function SectionIntake({
-  isCloudReady,
-  onSaveMarkdown,
-  onUpload,
-}: {
-  isCloudReady: boolean;
-  onSaveMarkdown: (markdown: string) => void;
-  onUpload: (files: FileList | null) => void;
-}) {
-  const [markdown, setMarkdown] = useState("");
-
-  function handleDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    onUpload(event.dataTransfer.files);
-  }
-
-  function saveMarkdown() {
-    onSaveMarkdown(markdown);
-    setMarkdown("");
-  }
-
-  return (
-    <div className="section-intake">
-      <label className="section-asset-upload" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
-        <span>Upload assets</span>
-        <strong>Select files or drag them here</strong>
-        <input
-          accept=".md,.markdown,.svg,.png,.jpg,.jpeg,.webp,.pdf,.doc,.docx,.ppt,.pptx,text/markdown,text/plain,image/svg+xml,image/png,image/jpeg,image/webp,application/pdf"
-          multiple
-          onChange={(event) => onUpload(event.target.files)}
-          type="file"
-        />
-      </label>
-      <div className="markdown-intake">
-        <label htmlFor="section-markdown">Paste Markdown</label>
-        <textarea
-          id="section-markdown"
-          onChange={(event) => setMarkdown(event.target.value)}
-          placeholder="Paste rules.md or section notes here"
-          value={markdown}
-        />
-        <button disabled={!markdown.trim()} onClick={saveMarkdown} type="button">
-          Save Markdown
-        </button>
-      </div>
-      {!isCloudReady ? <em>Sign in and set up this repo before uploading files.</em> : null}
     </div>
   );
 }
@@ -4016,43 +4462,5 @@ function AssetCard({
         ) : null}
       </div>
     </article>
-  );
-}
-
-function ObjectList<T extends { id: string; name?: string; sources: Source[] }>({
-  emptyDescription,
-  emptyTitle,
-  items,
-  render,
-  title,
-}: {
-  emptyDescription: string;
-  emptyTitle: string;
-  items: T[];
-  render: (item: T) => ReactNode;
-  title?: (item: T) => string;
-}) {
-  if (!items.length) {
-    return (
-      <section className="object-list">
-        <EmptyState description={emptyDescription} title={emptyTitle} />
-      </section>
-    );
-  }
-
-  return (
-    <section className="object-list">
-      {items.map((item) => (
-        <article key={item.id}>
-          <h2>{title ? title(item) : item.name}</h2>
-          <div>{render(item)}</div>
-          <div className="citations">
-            {item.sources.map((source) => (
-              <span key={source.id}>{source.label}</span>
-            ))}
-          </div>
-        </article>
-      ))}
-    </section>
   );
 }

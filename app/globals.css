@@ -12,6 +12,7 @@
   --panel-subtle: #131720;
   --ink: #f8fafc;
   --accent: #0891b2;
+  --accent-ink: #ffffff;
   --accent-dark: #06b6d4;
   --accent-soft: #103444;
   --accent-line: #155e75;
@@ -57,6 +58,7 @@
   --panel-subtle: #f8fafc;
   --ink: #18181b;
   --accent: #0891b2;
+  --accent-ink: #ffffff;
   --accent-dark: #0e7490;
   --accent-soft: #e0f2fe;
   --accent-line: #67e8f9;
@@ -746,6 +748,120 @@ label {
   gap: 18px;
 }
 
+.repo-overview {
+  gap: 20px;
+}
+
+.repo-overview-header {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.repo-overview-header h2 {
+  margin: 0 0 4px;
+}
+
+.repo-overview-header p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.repo-overview-score {
+  align-items: center;
+  background: var(--panel-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  display: flex;
+  font-size: 1.35rem;
+  font-weight: 750;
+  height: 72px;
+  justify-content: center;
+  min-width: 92px;
+}
+
+.repo-progress-track {
+  background: var(--panel-subtle);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.repo-progress-track span {
+  background: var(--accent);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.repo-overview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.repo-overview-card {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  justify-items: start;
+  min-height: 78px;
+  padding: 14px;
+  text-align: left;
+}
+
+.repo-overview-card:hover:not(:disabled) {
+  background: var(--panel-subtle);
+}
+
+.repo-overview-card strong,
+.repo-overview-card small {
+  display: block;
+}
+
+.repo-overview-card small {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.repo-overview-card em {
+  color: var(--muted-strong);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.repo-overview-actions {
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 18px;
+}
+
+.section-check {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  height: 24px;
+  width: 24px;
+}
+
+.section-check.complete {
+  align-items: center;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  display: flex;
+  font-size: 0.8rem;
+  font-weight: 800;
+  justify-content: center;
+}
+
 .repo-section-header {
   align-items: center;
   display: flex;
@@ -867,6 +983,75 @@ label {
   pointer-events: none;
   position: fixed;
   z-index: 40;
+}
+
+.modal-layer {
+  align-items: center;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 50;
+}
+
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.38);
+  border: 0;
+  border-radius: 0;
+  height: 100%;
+  inset: 0;
+  min-height: 0;
+  padding: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.modal-backdrop:hover,
+.modal-backdrop:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.38);
+  box-shadow: none;
+  transform: none;
+}
+
+.small-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 18px;
+  max-width: 420px;
+  padding: 18px;
+  position: relative;
+  width: min(100%, 420px);
+  z-index: 1;
+}
+
+.small-modal header,
+.small-modal footer {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.small-modal h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.small-modal footer {
+  justify-content: flex-end;
+}
+
+.icon-close {
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  min-height: 34px;
+  padding: 0;
+  width: 34px;
 }
 
 .drawer-backdrop {
@@ -1220,17 +1405,28 @@ label {
 }
 
 .messages .assistant {
-  background: var(--panel-soft);
+  justify-self: start;
+  max-width: min(760px, 100%);
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .messages .user {
-  background: var(--secondary-soft);
-  margin-left: 12%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  justify-self: end;
+  max-width: min(680px, 86%);
 }
 
 .messages p {
-  margin: 0 0 10px;
+  margin: 0;
   white-space: pre-line;
+}
+
+.messages article:has(.chat-generated-image) {
+  max-width: min(860px, 100%);
+  width: 100%;
 }
 
 .chat-generated-image {
@@ -1719,6 +1915,17 @@ dd {
 
   .home-intro p:not(.eyebrow) {
     font-size: 0.98rem;
+  }
+
+  .repo-overview-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .repo-overview-score {
+    height: 54px;
+    min-width: 0;
+    width: 100%;
   }
 
   .topbar,
