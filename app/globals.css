@@ -1799,6 +1799,29 @@ button.read-field-edit:focus-visible {
   margin: 4px 0 0;
 }
 
+.settings-token-block {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.developer-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.developer-token-actions button {
+  min-height: 34px;
+}
+
+.developer-token-field {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  min-height: 84px;
+  resize: vertical;
+}
+
 .theme-toggle {
   background: var(--panel-subtle);
   border: 1px solid var(--line);
@@ -1830,16 +1853,20 @@ button.read-field-edit:focus-visible {
 }
 
 .settings-form .success-text,
-.settings-form .error-text {
+.settings-form .error-text,
+.settings-block .success-text,
+.settings-block .error-text {
   font-size: 0.88rem;
   line-height: 1.45;
 }
 
-.settings-form .success-text {
+.settings-form .success-text,
+.settings-block .success-text {
   color: var(--success);
 }
 
-.settings-form .error-text {
+.settings-form .error-text,
+.settings-block .error-text {
   color: var(--danger);
 }
 

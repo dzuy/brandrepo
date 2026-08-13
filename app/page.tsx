@@ -833,6 +833,10 @@ export default function Home() {
   const [settingsAccountName, setSettingsAccountName] = useState("");
   const [settingsStatus, setSettingsStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [settingsError, setSettingsError] = useState("");
+  const [developerToken, setDeveloperToken] = useState("");
+  const [developerTokenVisible, setDeveloperTokenVisible] = useState(false);
+  const [developerTokenStatus, setDeveloperTokenStatus] = useState<"idle" | "loading" | "copied" | "error">("idle");
+  const [developerTokenError, setDeveloperTokenError] = useState("");
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [themePreferenceReady, setThemePreferenceReady] = useState(false);
   const [cloudHydrated, setCloudHydrated] = useState(false);
@@ -1795,8 +1799,44 @@ export default function Home() {
     if (!supabase) return;
     await supabase.auth.signOut();
     setCurrentUser(null);
+    setDeveloperToken("");
+    setDeveloperTokenVisible(false);
+    setDeveloperTokenStatus("idle");
+    setDeveloperTokenError("");
     setCloudHydrated(false);
     setSyncStatus("Local only");
+  }
+
+  async function refreshDeveloperToken() {
+    if (!supabase) return;
+
+    setDeveloperTokenStatus("loading");
+    setDeveloperTokenError("");
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error || !data.session?.access_token) {
+      setDeveloperToken("");
+      setDeveloperTokenVisible(false);
+      setDeveloperTokenStatus("error");
+      setDeveloperTokenError(error?.message ?? "No active Supabase session token is available.");
+      return;
+    }
+
+    setDeveloperToken(data.session.access_token);
+    setDeveloperTokenVisible(true);
+    setDeveloperTokenStatus("idle");
+  }
+
+  async function copyDeveloperToken() {
+    if (!developerToken) return;
+
+    try {
+      await navigator.clipboard.writeText(developerToken);
+      setDeveloperTokenStatus("copied");
+    } catch {
+      setDeveloperTokenStatus("error");
+      setDeveloperTokenError("Unable to copy token automatically.");
+    }
   }
 
   function switchAuthMode(mode: AuthMode) {
@@ -2931,6 +2971,47 @@ export default function Home() {
                   {settingsStatus === "success" && <span className="success-text">Account name saved.</span>}
                   {settingsError && <span className="error-text">{settingsError}</span>}
                 </form>
+              ) : null}
+              {isSupabaseConfigured && currentUser ? (
+                <section className="settings-block settings-token-block">
+                  <div>
+                    <h3>Developer token</h3>
+                    <p>Temporary local testing token for read-only API and MCP calls. Treat it like a password.</p>
+                  </div>
+                  <div className="developer-token-actions">
+                    <button disabled={developerTokenStatus === "loading"} onClick={refreshDeveloperToken} type="button">
+                      {developerTokenStatus === "loading" ? "Loading..." : developerToken ? "Refresh token" : "Show token"}
+                    </button>
+                    {developerToken ? (
+                      <button className="secondary" onClick={copyDeveloperToken} type="button">
+                        Copy
+                      </button>
+                    ) : null}
+                    {developerToken ? (
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setDeveloperTokenVisible((current) => !current);
+                          setDeveloperTokenStatus("idle");
+                          setDeveloperTokenError("");
+                        }}
+                        type="button"
+                      >
+                        {developerTokenVisible ? "Hide" : "Show"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {developerToken ? (
+                    <textarea
+                      className="developer-token-field"
+                      readOnly
+                      value={developerTokenVisible ? developerToken : "Token hidden. Use Copy or Show when needed."}
+                    />
+                  ) : null}
+                  <p className="form-note">Use this as an `Authorization: Bearer ...` token while testing locally.</p>
+                  {developerTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
+                  {developerTokenError && <span className="error-text">{developerTokenError}</span>}
+                </section>
               ) : null}
               {isSupabaseConfigured ? (
                 <button className="danger-secondary" onClick={signOut} type="button">

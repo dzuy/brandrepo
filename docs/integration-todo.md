@@ -4,24 +4,32 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 
 ## Next
 
-- [ ] Add a temporary developer token view in Settings for local API/MCP testing.
-- [ ] Document authenticated curl examples for read-only API endpoints.
-- [ ] Document authenticated curl examples for `/api/mcp`.
-- [ ] Test `/api/repos` with a real signed-in Supabase bearer token.
-- [ ] Test `/api/repos/:repoId/context` with a real signed-in Supabase bearer token.
-- [ ] Test `/api/repos/:repoId/assets` with a real signed-in Supabase bearer token.
-- [ ] Test `/api/repos/:repoId/search?q=logo` with a real signed-in Supabase bearer token.
-- [ ] Test MCP `initialize`.
-- [ ] Test MCP `tools/list`.
-- [ ] Test MCP `tools/call` for `list_repos`.
-- [ ] Test MCP `tools/call` for `get_repo_context`.
-- [ ] Test MCP `tools/call` for `get_section_markdown`.
-- [ ] Test MCP `tools/call` for `list_assets`.
+- [ ] Configure Google provider in Supabase Auth and Google Cloud.
+- [ ] Add `https://brandrepo.dev/**` to Supabase Auth redirect URLs after the production domain is connected.
+- [ ] Add `https://brandrepo.dev` and `https://www.brandrepo.dev` to Google OAuth authorized JavaScript origins after the production domain is connected.
+- [x] Add a temporary developer token view in Settings for local API/MCP testing.
+- [x] Document authenticated curl examples for read-only API endpoints.
+- [x] Document authenticated curl examples for `/api/mcp`.
+- [x] Test `/api/repos` with a real signed-in Supabase bearer token.
+- [x] Test `/api/repos/:repoId/context` with a real signed-in Supabase bearer token.
+- [x] Test `/api/repos/:repoId/assets` with a real signed-in Supabase bearer token.
+- [x] Test `/api/repos/:repoId/search?q=logo` with a real signed-in Supabase bearer token.
+- [x] Test MCP `initialize`.
+- [x] Test MCP `tools/list`.
+- [x] Test MCP `tools/call` for `list_repos`.
+- [x] Test MCP `tools/call` for `get_repo_context`.
+- [x] Test MCP `tools/call` for `get_section_markdown`.
+- [x] Test MCP `tools/call` for `list_assets`.
 
 ## Auth
 
-- [ ] Add Google login through Supabase Auth.
-- [ ] Keep email/password login available unless there is a product reason to remove it.
+- [x] Add reset password flow through Supabase Auth.
+- [x] Add Google login through Supabase Auth in the BrandRepo app.
+- [x] Keep email/password login available unless there is a product reason to remove it.
+- [ ] Configure Supabase Google provider with the Google OAuth client ID and secret.
+- [ ] Configure Supabase Auth URL settings for local, Vercel, and production domains.
+- [ ] Configure Google OAuth consent screen branding for BrandRepo.
+- [ ] Decide whether to add a Supabase custom auth domain such as `auth.brandrepo.dev`.
 - [ ] Add account linking expectations for users who sign up with email and later use Google.
 - [ ] Define production integration auth strategy.
 - [ ] Decide whether early external integrations use developer tokens, personal access tokens, or OAuth.
@@ -44,4 +52,3 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [ ] Canva integration for approved assets and brand-kit workflows.
 - [ ] Draft workflow for external tools to propose repo updates without directly overwriting sections.
 - [ ] Save generated external assets back into BrandRepo after explicit user approval.
-

@@ -170,6 +170,8 @@ Avoid direct overwrite tools early. For example, do not start with `update_messa
 
 BrandRepo repos are private account data. External clients must not use Supabase anon keys directly.
 
+Current app authentication is handled through Supabase Auth. See `docs/auth-setup.md` for the concrete provider configuration required for email/password, password reset, Google OAuth, Vercel, and the future `brandrepo.dev` production domain.
+
 Recommended path:
 
 1. Prototype with scoped developer tokens.
@@ -302,6 +304,8 @@ The `npm test` command must include:
 - Context generation tests.
 - MCP read-only tool tests.
 - Rendered app shell tests.
+
+Manual bearer-token and MCP curl checks are documented in `docs/mcp-testing.md`.
 
 ### Phase 3: Draft Workflow
 
