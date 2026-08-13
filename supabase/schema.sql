@@ -29,8 +29,31 @@ create index if not exists brandrepo_integration_tokens_user_id_idx
 create index if not exists brandrepo_integration_tokens_token_hash_idx
   on public.brandrepo_integration_tokens (token_hash);
 
+create table if not exists public.brandrepo_integration_access_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  integration_token_id uuid references public.brandrepo_integration_tokens(id) on delete set null,
+  method text not null,
+  path text not null,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists brandrepo_integration_access_logs_user_id_idx
+  on public.brandrepo_integration_access_logs (user_id, created_at desc);
+
+create index if not exists brandrepo_integration_access_logs_token_id_idx
+  on public.brandrepo_integration_access_logs (integration_token_id, created_at desc);
+
 alter table public.brandhub_workspaces enable row level security;
 alter table public.brandrepo_integration_tokens enable row level security;
+alter table public.brandrepo_integration_access_logs enable row level security;
+
+drop policy if exists "Users can read their BrandRepo integration access logs" on public.brandrepo_integration_access_logs;
+create policy "Users can read their BrandRepo integration access logs"
+  on public.brandrepo_integration_access_logs
+  for select
+  using (auth.uid() = user_id);
 
 drop policy if exists "Users can read their BrandRepo integration tokens" on public.brandrepo_integration_tokens;
 create policy "Users can read their BrandRepo integration tokens"

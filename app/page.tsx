@@ -3192,7 +3192,7 @@ export default function Home() {
                     )}
                   </div>
                   <p className="form-note">
-                    Use integration tokens with `Authorization: Bearer ...` against `https://brandrepo.dev/api/mcp`.
+                    Use integration tokens with `Authorization: Bearer ...` against `https://www.brandrepo.dev/api/mcp`.
                   </p>
                   {integrationTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
                   {integrationTokenError && <span className="error-text">{integrationTokenError}</span>}

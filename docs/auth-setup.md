@@ -39,8 +39,10 @@ Run the latest `supabase/schema.sql` in Supabase SQL Editor.
 This creates:
 
 - `public.brandrepo_integration_tokens`
+- `public.brandrepo_integration_access_logs`
 - indexes for user and token hash lookups
 - RLS policies so users can view, create, and revoke only their own tokens
+- RLS policies so users can read their own integration access logs
 
 ### 2. Add the Vercel Server Secret
 
@@ -73,7 +75,7 @@ Authorization: Bearer brp_...
 against:
 
 ```txt
-https://brandrepo.dev/api/mcp
+https://www.brandrepo.dev/api/mcp
 ```
 
 ## Supabase Auth URL Configuration

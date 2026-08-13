@@ -14,10 +14,12 @@ Integration tokens are scoped for external clients and are the preferred way to 
 
 ```bash
 export BRANDREPO_TOKEN="paste-integration-token-here"
-export BRANDREPO_BASE_URL="https://brandrepo.dev"
+export BRANDREPO_BASE_URL="https://www.brandrepo.dev"
 ```
 
 Server requirement: deployed integration-token validation requires `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in the hosting environment.
+
+Use the final, non-redirecting base URL. If curl returns only `Redirecting...`, switch to the target domain shown in the `location` response header. MCP clients should not rely on redirects because auth headers may not be preserved.
 
 ## Fallback: Use a Temporary Developer Token
 

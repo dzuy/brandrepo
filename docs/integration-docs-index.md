@@ -36,6 +36,6 @@ Use these docs as the source of truth for integrations.
 
 - `docs/chatgpt-mcp-connection.md`
   - External MCP client connection guide.
-  - Canonical endpoint: `https://brandrepo.dev/api/mcp`.
+  - Canonical endpoint: `https://www.brandrepo.dev/api/mcp`.
   - Expected tool flow.
   - Troubleshooting.

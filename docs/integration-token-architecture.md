@@ -100,11 +100,32 @@ Revoking a token sets `revoked_at`.
 
 Revoked tokens remain in the database for auditability and UI history, but they no longer authenticate.
 
+## Audit Logging
+
+External API/MCP calls authenticated with integration tokens are logged in:
+
+```txt
+public.brandrepo_integration_access_logs
+```
+
+Logged fields:
+
+- user id
+- integration token id
+- HTTP method
+- request path
+- user agent
+- timestamp
+
+Audit logging is best-effort. A failed log insert should not block an otherwise valid read-only integration request.
+
+Raw token values are never logged.
+
 ## Current Limitations
 
 - No token expiration UI yet.
 - No per-repo scoping yet.
-- No audit log table yet.
+- No audit log UI yet.
 - No OAuth connection flow yet.
 - No write scopes are active.
 
@@ -118,4 +139,5 @@ This system is acceptable for V1 when:
 - Users can revoke tokens.
 - MCP/API endpoints accept valid `brp_` tokens.
 - MCP/API endpoints reject revoked, expired, missing, or malformed tokens.
+- MCP/API calls authenticated with integration tokens create access log rows.
 - Read-only MCP tools remain the only exposed tools.

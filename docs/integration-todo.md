@@ -38,11 +38,12 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [x] Define production integration auth strategy.
 - [x] Decide whether early external integrations use developer tokens, personal access tokens, or OAuth.
 - [x] Add token scopes such as `repo:read`, `assets:read`, `drafts:write`, and `repo:write`.
-- [ ] Add `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` to Vercel for integration-token validation.
-- [ ] Run updated `supabase/schema.sql` in Supabase SQL Editor to create integration token storage.
-- [ ] Create a real integration token in production Settings.
-- [ ] Test `https://brandrepo.dev/api/mcp` with a real `brp_` integration token.
-- [ ] Add audit logging for external API/MCP access.
+- [x] Add `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` to Vercel for integration-token validation.
+- [x] Run updated `supabase/schema.sql` in Supabase SQL Editor to create integration token storage.
+- [x] Create a real integration token in production Settings.
+- [x] Test `https://www.brandrepo.dev/api/mcp` with a real `brp_` integration token.
+- [x] Add audit logging for external API/MCP access.
+- [ ] Re-run updated `supabase/schema.sql` in Supabase SQL Editor to create integration access log storage.
 
 ## ChatGPT MCP
 

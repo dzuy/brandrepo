@@ -7,10 +7,12 @@ This document is the source of truth for connecting ChatGPT or another MCP-capab
 Use the production MCP endpoint:
 
 ```txt
-https://brandrepo.dev/api/mcp
+https://www.brandrepo.dev/api/mcp
 ```
 
 The endpoint is read-only in V1.
+
+Use the final, non-redirecting URL. Some MCP clients and HTTP clients may not preserve `Authorization` headers across redirects.
 
 ## What This Enables
 
@@ -91,7 +93,7 @@ assets:read
 Use:
 
 ```txt
-URL: https://brandrepo.dev/api/mcp
+URL: https://www.brandrepo.dev/api/mcp
 Authorization: Bearer brp_...
 ```
 

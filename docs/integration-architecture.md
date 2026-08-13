@@ -120,7 +120,7 @@ Concrete connection steps are documented in `docs/chatgpt-mcp-connection.md`.
 Preferred endpoint:
 
 ```txt
-https://brandrepo.dev/api/mcp
+https://www.brandrepo.dev/api/mcp
 ```
 
 Alternative if separation becomes useful:

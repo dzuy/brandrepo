@@ -86,7 +86,26 @@ async function loadWorkspacesByUserId(userId: string) {
   return ((data ?? []) as WorkspaceRow[]).map((row) => ({ ...row.data, id: row.id, name: row.name }));
 }
 
-async function loadWorkspacesByIntegrationToken(token: string) {
+async function logIntegrationAccess(
+  serviceSupabase: ReturnType<typeof createServiceSupabase>,
+  integrationToken: IntegrationTokenRow,
+  request: Request,
+) {
+  try {
+    const url = new URL(request.url);
+    await serviceSupabase.from("brandrepo_integration_access_logs").insert({
+      user_id: integrationToken.user_id,
+      integration_token_id: integrationToken.id,
+      method: request.method,
+      path: url.pathname,
+      user_agent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
+    });
+  } catch {
+    // Audit logs should not break otherwise valid read-only integration calls.
+  }
+}
+
+async function loadWorkspacesByIntegrationToken(token: string, request: Request) {
   const serviceSupabase = createServiceSupabase();
   const tokenHash = await hashIntegrationToken(token);
   const { data, error } = await serviceSupabase
@@ -116,6 +135,7 @@ async function loadWorkspacesByIntegrationToken(token: string) {
     .from("brandrepo_integration_tokens")
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", integrationToken.id);
+  await logIntegrationAccess(serviceSupabase, integrationToken, request);
 
   return loadWorkspacesByUserId(integrationToken.user_id);
 }
@@ -131,7 +151,7 @@ export async function loadAuthenticatedWorkspaces(request: Request): Promise<Wor
   }
 
   if (isIntegrationToken(token)) {
-    return loadWorkspacesByIntegrationToken(token);
+    return loadWorkspacesByIntegrationToken(token, request);
   }
 
   const { authenticatedSupabase, user } = await authenticateSupabaseRequest(request);
