@@ -38,7 +38,7 @@ import {
   repoTabs,
 } from "../lib/repo-model";
 
-type NavSection = "Repo" | "Chat" | "Campaigns" | "Assets" | "Settings";
+type NavSection = "Repo" | "Chat" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
 type ThemeMode = "dark" | "light";
 type AuthMode = "sign-in" | "sign-up" | "reset-password" | "update-password";
 
@@ -58,6 +58,16 @@ type IntegrationTokenView = {
   lastUsedAt: string | null;
   expiresAt: string | null;
   revokedAt: string | null;
+};
+
+type OAuthConnectionView = {
+  clientId: string;
+  name: string;
+  redirectUris: string[];
+  scopes: string[];
+  connectedAt: string | null;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
 };
 
 type IdentityField = keyof IdentitySettings;
@@ -109,7 +119,126 @@ const legacyStorageKey = "brandhub-v1-prototype";
 const brokenRepoCleanupStorageKey = "brandrepo-cleaned-repo2-nike-v2";
 const brokenRepoNamesToDelete = new Set(["Repo2", "Repo 2", "Nike"]);
 
-const navItems: NavSection[] = ["Repo", "Chat", "Assets"];
+const navItems: NavSection[] = ["Repo", "Chat", "Connected Apps", "Assets"];
+const recommendedApps = [
+  {
+    name: "Claude",
+    logo: "https://www.google.com/s2/favicons?domain=claude.ai&sz=128",
+    aliases: ["claude", "anthropic"],
+    description: "Ask Claude questions about your repo, brand rules, approved assets, and messaging.",
+    sourceName: "Claude custom connector docs",
+    sourceUrl: "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+    steps: [
+      "Open Claude, then go to Customize > Connectors.",
+      "Click +, then choose Add custom connector.",
+      "Enter BrandRepo as the name and https://www.brandrepo.dev/api/mcp as the remote MCP server URL.",
+      "Click Add, then Connect, and approve the BrandRepo OAuth screen.",
+      "Enable the connector in a chat from the + menu > Connectors.",
+    ],
+  },
+  {
+    name: "ChatGPT",
+    logo: "https://www.google.com/s2/favicons?domain=chatgpt.com&sz=128",
+    aliases: ["chatgpt", "openai"],
+    description: "Bring BrandRepo context into ChatGPT once custom MCP connectors are available for your workspace.",
+    sourceName: "OpenAI developer mode docs",
+    sourceUrl: "https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta",
+    steps: [
+      "Use a ChatGPT workspace that supports custom MCP apps.",
+      "Have an admin or owner enable developer mode for custom MCP connectors.",
+      "Create a custom app and enter https://www.brandrepo.dev/api/mcp as the MCP server URL.",
+      "Test the app, then publish it to the workspace if required.",
+      "Connect the app from ChatGPT and approve the BrandRepo OAuth screen.",
+    ],
+  },
+  {
+    name: "Gamma",
+    logo: "https://www.google.com/s2/favicons?domain=gamma.app&sz=128",
+    aliases: ["gamma"],
+    description: "Create presentations that use approved messaging, voice, colors, and visual assets.",
+    sourceName: "Gamma MCP docs",
+    sourceUrl: "https://developers.gamma.app/mcp",
+    steps: [
+      "Gamma exposes its own MCP server for AI tools; it does not currently act as the place where you install BrandRepo.",
+      "Connect BrandRepo to an MCP-capable assistant such as Claude or ChatGPT.",
+      "Connect Gamma in that same assistant if your plan/tool supports Gamma MCP.",
+      "Ask the assistant to use BrandRepo for messaging, voice, colors, and assets before creating the Gamma deck.",
+    ],
+  },
+  {
+    name: "Canva",
+    logo: "https://www.google.com/s2/favicons?domain=canva.com&sz=128",
+    aliases: ["canva"],
+    description: "Make brand kits and creative assets from approved logos, colors, imagery, and rules.",
+    sourceName: "Canva MCP docs",
+    sourceUrl: "https://www.canva.dev/docs/mcp/",
+    steps: [
+      "Canva provides an MCP server and AI Connector for tools like Claude and ChatGPT.",
+      "Connect BrandRepo to the same AI assistant where you use Canva.",
+      "Connect Canva from that assistant's connector directory or app settings.",
+      "Ask the assistant to reference BrandRepo first, then create or edit Canva designs with the approved brand context.",
+      "A direct third-party connector inside Canva AI is not generally available yet.",
+    ],
+  },
+  {
+    name: "Google Docs",
+    logo: "https://www.google.com/s2/favicons?domain=docs.google.com&sz=128",
+    aliases: ["google docs", "google", "docs"],
+    description: "Draft documents using the same approved brand messaging, voice, and terminology.",
+    sourceName: "Google Drive connector docs",
+    sourceUrl: "https://help.openai.com/en/articles/10948259",
+    steps: [
+      "Google Docs does not install custom MCP servers directly.",
+      "Connect BrandRepo to an AI assistant such as Claude or ChatGPT.",
+      "Connect Google Drive/Google Workspace in that same assistant.",
+      "Use Docs through the Google Drive connector, then ask the assistant to draft or rewrite documents using BrandRepo context.",
+    ],
+  },
+  {
+    name: "Figma",
+    logo: "https://www.google.com/s2/favicons?domain=figma.com&sz=128",
+    aliases: ["figma"],
+    description: "Sync identity assets, color tokens, typography, and design usage rules into design workflows.",
+    sourceName: "Figma custom MCP connector docs",
+    sourceUrl: "https://help.figma.com/hc/en-us/articles/38147204302743-Create-and-use-custom-MCP-connectors-in-the-Figma-agent-and-Figma-Make",
+    steps: [
+      "In Figma agent or Figma Make, click Add context from the prompt box.",
+      "Hover over Connectors, then choose Manage.",
+      "Go to Created by you and click Create.",
+      "Enter the BrandRepo MCP server URL: https://www.brandrepo.dev/api/mcp.",
+      "Click Connect, approve OAuth, and enable the BrandRepo tools you want Figma to use.",
+    ],
+  },
+  {
+    name: "Google Slides",
+    logo: "https://www.google.com/s2/favicons?domain=slides.google.com&sz=128",
+    aliases: ["google slides", "slides"],
+    description: "Build sales and marketing decks from approved messaging, assets, and visual guidance.",
+    sourceName: "Google Drive connector docs",
+    sourceUrl: "https://help.openai.com/en/articles/10948259",
+    steps: [
+      "Google Slides is handled through Google Drive/Google Workspace connectors in AI assistants.",
+      "Connect BrandRepo to Claude or ChatGPT.",
+      "Connect Google Drive in the same assistant.",
+      "Ask the assistant to create or rewrite Slides content using BrandRepo messaging, voice, and identity rules.",
+    ],
+  },
+  {
+    name: "Notion",
+    logo: "https://www.google.com/s2/favicons?domain=notion.so&sz=128",
+    aliases: ["notion"],
+    description: "Keep launch docs, briefs, and team pages aligned to BrandRepo guidance.",
+    sourceName: "Notion custom MCP docs",
+    sourceUrl: "https://www.notion.com/help/mcp-connections-for-custom-agents",
+    steps: [
+      "Use a Notion Business or Enterprise workspace with Custom Agents.",
+      "Have a workspace admin enable custom MCP servers under Settings > Connections.",
+      "Open the Custom Agent settings, then go to Tools & Access.",
+      "Choose Add connection > Custom MCP server.",
+      "Enter https://www.brandrepo.dev/api/mcp, connect, and approve OAuth.",
+    ],
+  },
+] as const;
 
 const identitySections: { field: IdentityField; label: string; aliases: string[] }[] = [
   { field: "logos", label: "Logos", aliases: ["logos", "primary logo", "wordmark", "logomark", "logo variants"] },
@@ -853,6 +982,10 @@ export default function Home() {
   const [newIntegrationTokenSecret, setNewIntegrationTokenSecret] = useState("");
   const [integrationTokenStatus, setIntegrationTokenStatus] = useState<"idle" | "loading" | "creating" | "revoking" | "copied" | "error">("idle");
   const [integrationTokenError, setIntegrationTokenError] = useState("");
+  const [oauthConnections, setOauthConnections] = useState<OAuthConnectionView[]>([]);
+  const [oauthConnectionStatus, setOauthConnectionStatus] = useState<"idle" | "loading" | "revoking" | "error">("idle");
+  const [oauthConnectionError, setOauthConnectionError] = useState("");
+  const [developerSettingsOpen, setDeveloperSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [themePreferenceReady, setThemePreferenceReady] = useState(false);
   const [cloudHydrated, setCloudHydrated] = useState(false);
@@ -887,6 +1020,7 @@ export default function Home() {
   const [assetDrawerAssetId, setAssetDrawerAssetId] = useState<string | null>(null);
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [connectGuideAppName, setConnectGuideAppName] = useState<string | null>(null);
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
   const repo = activeWorkspace?.repo ?? initialRepo;
@@ -896,6 +1030,15 @@ export default function Home() {
   const selectedAsset = assetDrawerAssetId ? repo.assets.find((asset) => asset.id === assetDrawerAssetId) ?? null : null;
   const markdownDrawerContent = markdownDrawerSection ? generateSectionMarkdown(repo, markdownDrawerSection) : "";
   const markdownDrawerFileName = markdownDrawerSection ? sectionMarkdownFileName(markdownDrawerSection) : "";
+  const recommendedAppCards = recommendedApps.map((app) => {
+    const connection = oauthConnections.find((candidate) => {
+      const haystack = [candidate.name, candidate.clientId, ...candidate.redirectUris].join(" ").toLowerCase();
+      return app.aliases.some((alias) => haystack.includes(alias));
+    });
+
+    return { ...app, connectionRecord: connection ?? null };
+  });
+  const connectGuideApp = connectGuideAppName ? recommendedApps.find((app) => app.name === connectGuideAppName) ?? null : null;
 
   async function applyPendingGoogleAccountName(user: User | null) {
     if (!supabase || !user || getAccountName(user)) return user;
@@ -939,8 +1082,11 @@ export default function Home() {
   }, [theme, themePreferenceReady]);
 
   useEffect(() => {
-    if (section !== "Settings" || !currentUser || !isSupabaseConfigured) return;
-    void loadIntegrationTokens();
+    if ((section !== "Settings" && section !== "Connected Apps") || !currentUser || !isSupabaseConfigured) return;
+    void loadOAuthConnections();
+    if (section === "Settings") {
+      void loadIntegrationTokens();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, currentUser?.id]);
 
@@ -1868,6 +2014,55 @@ export default function Home() {
       throw new Error(error?.message ?? "No active Supabase session token is available.");
     }
     return data.session.access_token;
+  }
+
+  async function loadOAuthConnections() {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setOauthConnectionStatus("loading");
+      setOauthConnectionError("");
+      const response = await fetch("/api/oauth/connections", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to load connected apps.");
+      }
+
+      setOauthConnections(payload.connections ?? []);
+      setOauthConnectionStatus("idle");
+    } catch (error) {
+      setOauthConnectionStatus("error");
+      setOauthConnectionError(error instanceof Error ? error.message : "Unable to load connected apps.");
+    }
+  }
+
+  async function revokeOAuthConnection(clientId: string) {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setOauthConnectionStatus("revoking");
+      setOauthConnectionError("");
+      const response = await fetch(`/api/oauth/connections/${encodeURIComponent(clientId)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to revoke connected app.");
+      }
+
+      setOauthConnections((current) => current.filter((connection) => connection.clientId !== clientId));
+      setOauthConnectionStatus("idle");
+    } catch (error) {
+      setOauthConnectionStatus("error");
+      setOauthConnectionError(error instanceof Error ? error.message : "Unable to revoke connected app.");
+    }
   }
 
   async function loadIntegrationTokens() {
@@ -2993,6 +3188,89 @@ export default function Home() {
           </div>
         )}
 
+        {section === "Connected Apps" && (
+          <section className="connected-apps-page">
+            <header className="topbar">
+              <div>
+                <p className="eyebrow">Integrations</p>
+                <h1>Connected Apps</h1>
+              </div>
+              <button className="secondary" disabled={oauthConnectionStatus === "loading"} onClick={loadOAuthConnections} type="button">
+                {oauthConnectionStatus === "loading" ? "Refreshing..." : "Refresh"}
+              </button>
+            </header>
+            <section className="connected-apps-hero">
+              <div>
+                <h2>Connect BrandRepo to the tools where marketing work happens.</h2>
+                <p>
+                  External apps use BrandRepo as the source of truth for approved messaging, voice, identity assets, colors, and repo markdown.
+                </p>
+              </div>
+              <dl>
+                <div>
+                  <dt>Connected</dt>
+                  <dd>{oauthConnections.length}</dd>
+                </div>
+                <div>
+                  <dt>Access</dt>
+                  <dd>Read-only</dd>
+                </div>
+              </dl>
+            </section>
+            {oauthConnectionError ? <p className="import-error">{oauthConnectionError}</p> : null}
+            <section className="recommended-apps">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Recommended Apps</p>
+                  <h2>Start with these connections</h2>
+                </div>
+              </div>
+              <div className="recommended-app-grid">
+                {recommendedAppCards.map((app) => (
+                  <article className={app.connectionRecord ? "app-card connected" : "app-card"} key={app.name}>
+                    <div className="app-card-header">
+                      <span className="app-logo">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt={`${app.name} logo`} src={app.logo} />
+                      </span>
+                      <span className={app.connectionRecord ? "connection-badge connected" : "connection-badge"}>
+                        {app.connectionRecord ? "Connected" : "Not connected"}
+                      </span>
+                    </div>
+                    <div className="app-card-body">
+                      <h3>{app.name}</h3>
+                      <p>{app.description}</p>
+                    </div>
+                    <div className="app-card-footer">
+                      {app.connectionRecord ? (
+                        <>
+                          <small>
+                            {app.connectionRecord.lastUsedAt
+                              ? `Last used ${new Date(app.connectionRecord.lastUsedAt).toLocaleDateString()}`
+                              : "Connected to BrandRepo"}
+                          </small>
+                          <button
+                            className="danger-secondary"
+                            disabled={oauthConnectionStatus === "revoking"}
+                            onClick={() => revokeOAuthConnection(app.connectionRecord?.clientId ?? "")}
+                            type="button"
+                          >
+                            Revoke
+                          </button>
+                        </>
+                      ) : (
+                        <button className="app-connect-pill" onClick={() => setConnectGuideAppName(app.name)} type="button">
+                          How to Connect
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </section>
+        )}
+
         {section === "Assets" && (
           <div className="assets-view">
             <section className="asset-upload-band">
@@ -3096,106 +3374,124 @@ export default function Home() {
                 </form>
               ) : null}
               {isSupabaseConfigured && currentUser ? (
-                <section className="settings-block settings-token-block">
-                  <div>
-                    <h3>Developer token</h3>
-                    <p>Temporary local testing token for read-only API and MCP calls. Treat it like a password.</p>
-                  </div>
-                  <div className="developer-token-actions">
-                    <button disabled={developerTokenStatus === "loading"} onClick={refreshDeveloperToken} type="button">
-                      {developerTokenStatus === "loading" ? "Loading..." : developerToken ? "Refresh token" : "Show token"}
-                    </button>
-                    {developerToken ? (
-                      <button className="secondary" onClick={copyDeveloperToken} type="button">
-                        Copy
-                      </button>
-                    ) : null}
-                    {developerToken ? (
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setDeveloperTokenVisible((current) => !current);
-                          setDeveloperTokenStatus("idle");
-                          setDeveloperTokenError("");
-                        }}
-                        type="button"
-                      >
-                        {developerTokenVisible ? "Hide" : "Show"}
-                      </button>
-                    ) : null}
-                  </div>
-                  {developerToken ? (
-                    <textarea
-                      className="developer-token-field"
-                      readOnly
-                      value={developerTokenVisible ? developerToken : "Token hidden. Use Copy or Show when needed."}
-                    />
-                  ) : null}
-                  <p className="form-note">Use this as an `Authorization: Bearer ...` token while testing locally.</p>
-                  {developerTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
-                  {developerTokenError && <span className="error-text">{developerTokenError}</span>}
-                </section>
-              ) : null}
-              {isSupabaseConfigured && currentUser ? (
-                <section className="settings-block integration-token-block">
-                  <div>
-                    <h3>Integration tokens</h3>
-                    <p>Scoped read-only tokens for external MCP clients. New tokens are shown once.</p>
-                  </div>
-                  <label>
-                    Token name
-                    <input
-                      onChange={(event) => setIntegrationTokenName(event.target.value)}
-                      placeholder="ChatGPT MCP"
-                      value={integrationTokenName}
-                    />
-                  </label>
-                  <div className="developer-token-actions">
-                    <button disabled={integrationTokenStatus === "creating"} onClick={createIntegrationToken} type="button">
-                      {integrationTokenStatus === "creating" ? "Creating..." : "Create token"}
-                    </button>
-                    <button className="secondary" disabled={integrationTokenStatus === "loading"} onClick={loadIntegrationTokens} type="button">
-                      {integrationTokenStatus === "loading" ? "Loading..." : "Refresh list"}
-                    </button>
-                  </div>
-                  {newIntegrationTokenSecret ? (
-                    <div className="integration-token-secret">
-                      <p>Copy this token now. BrandRepo will not show it again.</p>
-                      <textarea className="developer-token-field" readOnly value={newIntegrationTokenSecret} />
-                      <button className="secondary" onClick={copyIntegrationTokenSecret} type="button">
-                        Copy new token
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="integration-token-list">
-                    {integrationTokens.length ? (
-                      integrationTokens.map((token) => (
-                        <article key={token.id}>
-                          <div>
-                            <strong>{token.name}</strong>
-                            <span>{token.tokenPrefix}...</span>
-                            <small>
-                              {token.scopes.join(", ")} · Created {new Date(token.createdAt).toLocaleDateString()}
-                              {token.lastUsedAt ? ` · Last used ${new Date(token.lastUsedAt).toLocaleDateString()}` : ""}
-                              {token.revokedAt ? " · Revoked" : ""}
-                            </small>
-                          </div>
-                          {!token.revokedAt ? (
-                            <button className="danger-secondary" onClick={() => revokeIntegrationToken(token.id)} type="button">
-                              Revoke
+                <section className="settings-block developer-settings-block">
+                  <button
+                    className="developer-settings-toggle"
+                    aria-expanded={developerSettingsOpen}
+                    onClick={() => setDeveloperSettingsOpen((current) => !current)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>Advanced developer settings</strong>
+                      <small>Testing tokens for local debugging. Production connectors should use OAuth.</small>
+                    </span>
+                    <span aria-hidden="true">{developerSettingsOpen ? "Hide" : "Show"}</span>
+                  </button>
+
+                  {developerSettingsOpen ? (
+                    <div className="developer-settings-content">
+                      <section className="settings-block settings-token-block">
+                        <div>
+                          <h3>Developer token</h3>
+                          <p>Temporary local testing token for read-only API and MCP calls. Treat it like a password.</p>
+                        </div>
+                        <div className="developer-token-actions">
+                          <button disabled={developerTokenStatus === "loading"} onClick={refreshDeveloperToken} type="button">
+                            {developerTokenStatus === "loading" ? "Loading..." : developerToken ? "Refresh token" : "Show token"}
+                          </button>
+                          {developerToken ? (
+                            <button className="secondary" onClick={copyDeveloperToken} type="button">
+                              Copy
                             </button>
                           ) : null}
-                        </article>
-                      ))
-                    ) : (
-                      <p>No integration tokens yet.</p>
-                    )}
-                  </div>
-                  <p className="form-note">
-                    Use integration tokens with `Authorization: Bearer ...` against `https://www.brandrepo.dev/api/mcp`.
-                  </p>
-                  {integrationTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
-                  {integrationTokenError && <span className="error-text">{integrationTokenError}</span>}
+                          {developerToken ? (
+                            <button
+                              className="secondary"
+                              onClick={() => {
+                                setDeveloperTokenVisible((current) => !current);
+                                setDeveloperTokenStatus("idle");
+                                setDeveloperTokenError("");
+                              }}
+                              type="button"
+                            >
+                              {developerTokenVisible ? "Hide" : "Show"}
+                            </button>
+                          ) : null}
+                        </div>
+                        {developerToken ? (
+                          <textarea
+                            className="developer-token-field"
+                            readOnly
+                            value={developerTokenVisible ? developerToken : "Token hidden. Use Copy or Show when needed."}
+                          />
+                        ) : null}
+                        <p className="form-note">Use this as an `Authorization: Bearer ...` token while testing locally.</p>
+                        {developerTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
+                        {developerTokenError && <span className="error-text">{developerTokenError}</span>}
+                      </section>
+
+                      <section className="settings-block integration-token-block">
+                        <div>
+                          <h3>Integration tokens</h3>
+                          <p>Developer-only read tokens for curl and MCP Inspector. New tokens are shown once.</p>
+                        </div>
+                        <label>
+                          Token name
+                          <input
+                            onChange={(event) => setIntegrationTokenName(event.target.value)}
+                            placeholder="MCP Inspector"
+                            value={integrationTokenName}
+                          />
+                        </label>
+                        <div className="developer-token-actions">
+                          <button disabled={integrationTokenStatus === "creating"} onClick={createIntegrationToken} type="button">
+                            {integrationTokenStatus === "creating" ? "Creating..." : "Create token"}
+                          </button>
+                          <button className="secondary" disabled={integrationTokenStatus === "loading"} onClick={loadIntegrationTokens} type="button">
+                            {integrationTokenStatus === "loading" ? "Loading..." : "Refresh list"}
+                          </button>
+                        </div>
+                        {newIntegrationTokenSecret ? (
+                          <div className="integration-token-secret">
+                            <p>Copy this token now. BrandRepo will not show it again.</p>
+                            <textarea className="developer-token-field" readOnly value={newIntegrationTokenSecret} />
+                            <button className="secondary" onClick={copyIntegrationTokenSecret} type="button">
+                              Copy new token
+                            </button>
+                          </div>
+                        ) : null}
+                        <div className="integration-token-list">
+                          {integrationTokens.length ? (
+                            integrationTokens.map((token) => (
+                              <article key={token.id}>
+                                <div>
+                                  <strong>{token.name}</strong>
+                                  <span>{token.tokenPrefix}...</span>
+                                  <small>
+                                    {token.scopes.join(", ")} · Created {new Date(token.createdAt).toLocaleDateString()}
+                                    {token.lastUsedAt ? ` · Last used ${new Date(token.lastUsedAt).toLocaleDateString()}` : ""}
+                                    {token.revokedAt ? " · Revoked" : ""}
+                                  </small>
+                                </div>
+                                {!token.revokedAt ? (
+                                  <button className="danger-secondary" onClick={() => revokeIntegrationToken(token.id)} type="button">
+                                    Revoke
+                                  </button>
+                                ) : null}
+                              </article>
+                            ))
+                          ) : (
+                            <p>No developer integration tokens yet.</p>
+                          )}
+                        </div>
+                        <p className="form-note">
+                          Use these only for local testing with `Authorization: Bearer ...` against `https://www.brandrepo.dev/api/mcp`.
+                        </p>
+                        {integrationTokenStatus === "copied" && <span className="success-text">Token copied.</span>}
+                        {integrationTokenError && <span className="error-text">{integrationTokenError}</span>}
+                      </section>
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
               {isSupabaseConfigured ? (
@@ -3224,6 +3520,7 @@ export default function Home() {
           onSubmit={submitNewRepo}
         />
       ) : null}
+      {connectGuideApp ? <AppConnectModal app={connectGuideApp} onClose={() => setConnectGuideAppName(null)} /> : null}
       {messagingImportDrawerMounted ? (
         <SectionMarkdownImportDrawer
           isOpen={messagingImportDrawerOpen}
@@ -3957,6 +4254,16 @@ function NavIcon({ item }: { item: NavSection }) {
     );
   }
 
+  if (item === "Connected Apps") {
+    return (
+      <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M8.5 8.5h-1A3.5 3.5 0 0 0 4 12v0a3.5 3.5 0 0 0 3.5 3.5h1" />
+        <path d="M15.5 8.5h1A3.5 3.5 0 0 1 20 12v0a3.5 3.5 0 0 1-3.5 3.5h-1" />
+        <path d="M9 12h6" />
+      </svg>
+    );
+  }
+
   return (
     <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
       <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
@@ -4054,6 +4361,52 @@ function NewRepoModal({
           </button>
         </footer>
       </form>
+    </div>
+  );
+}
+
+function AppConnectModal({
+  app,
+  onClose,
+}: {
+  app: (typeof recommendedApps)[number];
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-layer" role="presentation">
+      <button aria-label={`Close ${app.name} connection guide`} className="modal-backdrop" onClick={onClose} type="button" />
+      <section aria-label={`${app.name} connection guide`} className="connect-modal">
+        <header>
+          <span className="app-logo large">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt={`${app.name} logo`} src={app.logo} />
+          </span>
+          <div>
+            <p className="eyebrow">{app.name}</p>
+            <h2>Connect to BrandRepo</h2>
+          </div>
+          <button aria-label="Close" className="icon-close" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <div className="connect-endpoint">
+          <span>MCP server URL</span>
+          <code>https://www.brandrepo.dev/api/mcp</code>
+        </div>
+        <ol className="connect-steps">
+          {app.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <footer>
+          <a href={app.sourceUrl} rel="noreferrer" target="_blank">
+            Source: {app.sourceName}
+          </a>
+          <button onClick={onClose} type="button">
+            Done
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }

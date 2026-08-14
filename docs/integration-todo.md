@@ -48,8 +48,10 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [x] Add OAuth dynamic client registration.
 - [x] Add OAuth authorization-code with PKCE token exchange.
 - [x] Add OAuth refresh-token and revocation endpoints.
-- [ ] Re-run updated `supabase/schema.sql` in Supabase SQL Editor to create OAuth connector storage.
-- [ ] Deploy OAuth connector routes to Vercel.
+- [x] Re-run updated `supabase/schema.sql` in Supabase SQL Editor to create OAuth connector storage.
+- [x] Deploy OAuth connector routes to Vercel.
+- [x] Validate Claude custom connector against `https://www.brandrepo.dev/api/mcp`.
+- [x] Add connected-apps management UI for viewing and revoking OAuth connector access.
 
 ## ChatGPT MCP
 
@@ -62,7 +64,7 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 
 ## Later Integrations
 
-- [ ] Validate Claude custom connector against `https://www.brandrepo.dev/api/mcp`.
+- [x] Claude MCP support using the same Repo Context Service.
 - [ ] Figma integration for logos, colors, typography, and identity rules.
 - [ ] Canva integration for approved assets and brand-kit workflows.
 - [ ] Gamma integration for decks and generated brand-aware presentation assets.

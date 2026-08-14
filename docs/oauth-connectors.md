@@ -69,7 +69,7 @@ The MCP endpoint returns a `401` with `WWW-Authenticate` metadata when a connect
 
 ## Claude Connection Path
 
-Claude custom connectors are the first real production target.
+Claude custom connectors are the first real production target. This path was validated successfully against the production BrandRepo endpoint after the OAuth schema update and Vercel redeploy.
 
 In Claude:
 
@@ -107,10 +107,25 @@ OAuth tables:
 - `public.brandrepo_oauth_authorization_codes`
 - `public.brandrepo_oauth_access_tokens`
 
+The Settings UI reads and revokes connected apps through user-scoped RLS policies on `brandrepo_oauth_access_tokens`. Re-run `supabase/schema.sql` after pulling connected-apps changes so local and production Settings can revoke OAuth connector access without requiring a service key in the browser-facing route.
+
 Developer-token tables remain:
 
 - `public.brandrepo_integration_tokens`
 - `public.brandrepo_integration_access_logs`
+
+## Connected Apps Management
+
+BrandRepo Settings includes a Connected apps section for OAuth connector access.
+
+Users can:
+
+- view active OAuth connector clients
+- see granted scopes
+- see when a connector was connected and last used
+- revoke a connector's active OAuth tokens
+
+Developer-only tokens remain available in Advanced developer settings for curl, MCP Inspector, and debugging.
 
 ## Environment Variables
 
@@ -142,4 +157,3 @@ Normally leave this unset so OAuth metadata uses the exact host the connector ca
 - MCP accepts OAuth access tokens.
 - MCP still accepts existing `brp_` integration tokens for developer testing.
 - OAuth access remains read-only.
-

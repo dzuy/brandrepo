@@ -128,6 +128,13 @@ create policy "Users can read their BrandRepo OAuth access tokens"
   for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can revoke their BrandRepo OAuth access tokens" on public.brandrepo_oauth_access_tokens;
+create policy "Users can revoke their BrandRepo OAuth access tokens"
+  on public.brandrepo_oauth_access_tokens
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 drop policy if exists "Users can read their BrandRepo integration access logs" on public.brandrepo_integration_access_logs;
 create policy "Users can read their BrandRepo integration access logs"
   on public.brandrepo_integration_access_logs

@@ -1815,6 +1815,294 @@ button.read-field-edit:focus-visible {
   margin: 18px 0 0;
 }
 
+.connected-apps-page {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1180px;
+}
+
+.connected-apps-hero {
+  align-items: end;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 22px;
+}
+
+.connected-apps-hero h2 {
+  color: var(--ink);
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  letter-spacing: 0;
+  margin: 0;
+  max-width: 720px;
+}
+
+.connected-apps-hero p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 10px 0 0;
+  max-width: 720px;
+}
+
+.connected-apps-hero dl {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(100px, 1fr));
+  margin: 0;
+}
+
+.connected-apps-hero dl > div {
+  background: var(--panel-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.connected-apps-hero dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.connected-apps-hero dd {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.recommended-apps {
+  display: grid;
+  gap: 12px;
+}
+
+.recommended-app-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.app-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: 22px;
+  grid-template-rows: auto 1fr auto;
+  min-height: 250px;
+  padding: 20px;
+}
+
+.app-card.connected {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+}
+
+.app-card-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.app-logo {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: inline-flex;
+  height: 64px;
+  justify-content: center;
+  width: 64px;
+}
+
+.app-logo img {
+  display: block;
+  height: 40px;
+  object-fit: contain;
+  width: 40px;
+}
+
+.app-logo.large {
+  border-radius: 16px;
+  flex: 0 0 auto;
+  height: 72px;
+  width: 72px;
+}
+
+.app-logo.large img {
+  height: 46px;
+  width: 46px;
+}
+
+.connection-badge {
+  background: var(--panel-subtle);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.connection-badge.connected {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  color: var(--ink);
+}
+
+.app-card-body {
+  display: grid;
+  gap: 8px;
+}
+
+.app-card-body h3 {
+  color: var(--ink);
+  font-size: 1.35rem;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.app-card-body p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.app-card-footer {
+  align-items: end;
+  align-self: end;
+  display: grid;
+  gap: 12px;
+}
+
+.app-card-footer small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.app-card-footer button {
+  justify-self: start;
+  min-height: 36px;
+}
+
+.app-connect-pill {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.86rem;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 0 12px;
+  width: fit-content;
+}
+
+.app-connect-pill:hover,
+.app-connect-pill:hover:not(:disabled) {
+  background: var(--panel-subtle);
+  border-color: var(--muted);
+  box-shadow: none;
+  transform: none;
+}
+
+.connect-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 20px;
+  max-height: min(760px, calc(100vh - 40px));
+  max-width: 680px;
+  overflow: auto;
+  padding: 22px;
+  position: relative;
+  width: min(100%, 680px);
+  z-index: 1;
+}
+
+.connect-modal header {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.connect-modal h2 {
+  color: var(--ink);
+  font-size: 1.45rem;
+  letter-spacing: 0;
+  margin: 4px 0 0;
+}
+
+.connect-endpoint {
+  background: var(--panel-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.connect-endpoint span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.connect-endpoint code {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.connect-steps {
+  color: var(--ink);
+  display: grid;
+  gap: 12px;
+  line-height: 1.55;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.connect-steps li::marker {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.connect-modal footer {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-top: 16px;
+}
+
+.connect-modal footer a {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.connect-modal footer a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 .settings-page {
   display: grid;
   gap: 18px;
@@ -1865,6 +2153,69 @@ button.read-field-edit:focus-visible {
 .integration-token-block {
   align-items: stretch;
   grid-template-columns: minmax(0, 1fr);
+}
+
+.connected-apps-block {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.connected-apps-block .connected-apps-list {
+  grid-column: 1 / -1;
+}
+
+.developer-settings-block {
+  align-items: stretch;
+  background: var(--panel-subtle);
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+}
+
+.developer-settings-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  display: flex;
+  justify-content: space-between;
+  min-height: auto;
+  padding: 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.developer-settings-toggle:hover:not(:disabled),
+.developer-settings-toggle:focus-visible {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+}
+
+.developer-settings-toggle span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.developer-settings-toggle strong {
+  font-size: 0.95rem;
+}
+
+.developer-settings-toggle small,
+.developer-settings-toggle span:last-child {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.developer-settings-content {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.developer-settings-content .settings-block {
+  background: var(--panel);
 }
 
 .developer-token-actions {
@@ -2354,6 +2705,15 @@ button.asset-card:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .connected-apps-hero {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recommended-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-list div,
   .campaign-detail dl div {
     grid-template-columns: 1fr;
@@ -2456,16 +2816,41 @@ button.asset-card:focus-visible {
     font-size: 1.75rem;
   }
 
-  .home-intro,
-  .topbar,
-  .import-error,
-  .repo-panel,
-  .object-list,
-  .campaign-list,
-  .asset-grid,
-  .chat-layout,
-  .settings-page {
-    max-width: none;
+	  .home-intro,
+	  .topbar,
+	  .import-error,
+	  .repo-panel,
+	  .object-list,
+	  .campaign-list,
+	  .asset-grid,
+	  .chat-layout,
+	  .connected-apps-page,
+	  .settings-page {
+	    max-width: none;
+	    width: 100%;
+	  }
+
+  .connected-apps-hero dl,
+  .recommended-app-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-card {
+    min-height: 0;
+  }
+
+  .connect-modal {
+    border-radius: 16px;
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+  }
+
+  .connect-modal footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connect-modal footer button {
     width: 100%;
   }
 
