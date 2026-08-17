@@ -44,3 +44,17 @@ Use these docs as the source of truth for integrations.
   - Canonical endpoint: `https://www.brandrepo.dev/api/mcp`.
   - Expected tool flow.
   - Troubleshooting.
+
+## Create Workflows
+
+- `docs/gamma-integration.md`
+  - Direct Gamma Generate API integration.
+  - Current per-user Gamma API-key beta connection.
+  - Future Gamma OAuth setup notes.
+  - BrandRepo Create -> Gamma presentation workflow.
+
+- `docs/public-repo-sharing.md`
+  - Canonical public repo URLs.
+  - Copy for AI prompt behavior.
+  - AI-readable public markdown route.
+  - Public visibility groundwork.

@@ -20,6 +20,7 @@ type ImageReferenceAsset = {
 type ImageGenerationResponse = {
   data?: Array<{
     b64_json?: string;
+    url?: string;
     revised_prompt?: string;
   }>;
   error?: {
@@ -137,6 +138,32 @@ function getResponseImage(payload: ImageGenerationResponse) {
   return payload.data?.[0];
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
+async function responseImageToDataUrl(image: NonNullable<ReturnType<typeof getResponseImage>>) {
+  if (image.b64_json) {
+    return `data:image/png;base64,${image.b64_json}`;
+  }
+
+  if (!image.url) return "";
+
+  const response = await fetch(image.url);
+  if (!response.ok) return "";
+
+  const contentType = response.headers.get("content-type") ?? "image/png";
+  const buffer = await response.arrayBuffer();
+  return `data:${contentType};base64,${arrayBufferToBase64(buffer)}`;
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
@@ -228,15 +255,21 @@ export async function POST(request: Request) {
 
   const image = getResponseImage(payload);
 
-  if (!image?.b64_json) {
+  if (!image) {
     return Response.json({ error: "OpenAI returned an empty image." }, { status: 502 });
+  }
+
+  const imageDataUrl = await responseImageToDataUrl(image);
+
+  if (!imageDataUrl) {
+    return Response.json({ error: "OpenAI returned an image that BrandRepo could not display inline." }, { status: 502 });
   }
 
   return Response.json({
     answer: referenceAssets.length
       ? `Generated a brand-aware image mockup using ${referenceAssets.length} repo visual reference${referenceAssets.length === 1 ? "" : "s"}.`
       : "Generated a brand-aware image mockup from the repo context.",
-    imageDataUrl: `data:image/png;base64,${image.b64_json}`,
+    imageDataUrl,
     revisedPrompt: image.revised_prompt ?? imagePrompt,
   });
 }

@@ -3,12 +3,41 @@ create table if not exists public.brandhub_workspaces (
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   data jsonb not null,
+  account_slug text,
+  repo_slug text,
+  visibility text not null default 'public' check (visibility in ('public', 'unlisted', 'private')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.brandhub_workspaces
+  add column if not exists account_slug text;
+
+alter table public.brandhub_workspaces
+  add column if not exists repo_slug text;
+
+alter table public.brandhub_workspaces
+  add column if not exists visibility text not null default 'public';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'brandhub_workspaces_visibility_check'
+  ) then
+    alter table public.brandhub_workspaces
+      add constraint brandhub_workspaces_visibility_check
+      check (visibility in ('public', 'unlisted', 'private'));
+  end if;
+end $$;
+
 create index if not exists brandhub_workspaces_user_id_idx
   on public.brandhub_workspaces (user_id);
+
+create index if not exists brandhub_workspaces_public_slug_idx
+  on public.brandhub_workspaces (account_slug, repo_slug, updated_at desc)
+  where visibility = 'public';
 
 create table if not exists public.brandrepo_integration_tokens (
   id uuid primary key default gen_random_uuid(),
@@ -103,12 +132,73 @@ create index if not exists brandrepo_integration_access_logs_user_id_idx
 create index if not exists brandrepo_integration_access_logs_token_id_idx
   on public.brandrepo_integration_access_logs (integration_token_id, created_at desc);
 
+create table if not exists public.brandrepo_external_oauth_states (
+  id uuid primary key default gen_random_uuid(),
+  state text not null unique,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  code_verifier text not null,
+  redirect_uri text not null,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists brandrepo_external_oauth_states_state_idx
+  on public.brandrepo_external_oauth_states (state);
+
+create index if not exists brandrepo_external_oauth_states_user_id_idx
+  on public.brandrepo_external_oauth_states (user_id, created_at desc);
+
+create table if not exists public.brandrepo_external_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  provider_account_label text,
+  access_token_ciphertext text not null,
+  refresh_token_ciphertext text,
+  token_type text not null default 'Bearer',
+  scopes text[] not null default array[]::text[],
+  expires_at timestamptz,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  unique (user_id, provider)
+);
+
+create index if not exists brandrepo_external_connections_user_id_idx
+  on public.brandrepo_external_connections (user_id, connected_at desc);
+
+create index if not exists brandrepo_external_connections_provider_idx
+  on public.brandrepo_external_connections (provider);
+
 alter table public.brandhub_workspaces enable row level security;
 alter table public.brandrepo_integration_tokens enable row level security;
 alter table public.brandrepo_oauth_clients enable row level security;
 alter table public.brandrepo_oauth_authorization_codes enable row level security;
 alter table public.brandrepo_oauth_access_tokens enable row level security;
 alter table public.brandrepo_integration_access_logs enable row level security;
+alter table public.brandrepo_external_oauth_states enable row level security;
+alter table public.brandrepo_external_connections enable row level security;
+
+drop policy if exists "Users can read their BrandRepo external OAuth states" on public.brandrepo_external_oauth_states;
+create policy "Users can read their BrandRepo external OAuth states"
+  on public.brandrepo_external_oauth_states
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can read their BrandRepo external connections" on public.brandrepo_external_connections;
+create policy "Users can read their BrandRepo external connections"
+  on public.brandrepo_external_connections
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can revoke their BrandRepo external connections" on public.brandrepo_external_connections;
+create policy "Users can revoke their BrandRepo external connections"
+  on public.brandrepo_external_connections
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users can read OAuth clients" on public.brandrepo_oauth_clients;
 create policy "Users can read OAuth clients"
@@ -167,6 +257,12 @@ create policy "Users can read their BrandRepo repos"
   on public.brandhub_workspaces
   for select
   using (auth.uid() = user_id);
+
+drop policy if exists "Anyone can read public BrandRepo repos" on public.brandhub_workspaces;
+create policy "Anyone can read public BrandRepo repos"
+  on public.brandhub_workspaces
+  for select
+  using (visibility = 'public');
 
 drop policy if exists "Users can create their BrandHub workspaces" on public.brandhub_workspaces;
 drop policy if exists "Users can create their BrandHub repos" on public.brandhub_workspaces;

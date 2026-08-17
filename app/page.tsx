@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import type { BrandCreationContext, GammaCreationResult, PresentationCreationRequest } from "../lib/create/gamma";
+import { getRepoCanonicalUrl, getRepoSlug } from "../lib/repo-share";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
   classifyRepoAsset,
@@ -38,9 +40,20 @@ import {
   repoTabs,
 } from "../lib/repo-model";
 
-type NavSection = "Repo" | "Chat" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
+type NavSection = "Create" | "Repo" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
 type ThemeMode = "dark" | "light";
 type AuthMode = "sign-in" | "sign-up" | "reset-password" | "update-password";
+
+type MarketingAction = {
+  id: string;
+  title: string;
+  appName: string;
+  appLogo: string;
+  description: string;
+  enabled?: boolean;
+};
+
+type PresentationCreationStatus = "idle" | "creating" | "success" | "error";
 
 type ImageReferenceAsset = {
   name: string;
@@ -67,6 +80,15 @@ type OAuthConnectionView = {
   scopes: string[];
   connectedAt: string | null;
   lastUsedAt: string | null;
+  expiresAt: string | null;
+};
+
+type ExternalConnectionView = {
+  provider: string;
+  name: string;
+  scopes: string[];
+  connectedAt: string;
+  updatedAt: string;
   expiresAt: string | null;
 };
 
@@ -119,7 +141,52 @@ const legacyStorageKey = "brandhub-v1-prototype";
 const brokenRepoCleanupStorageKey = "brandrepo-cleaned-repo2-nike-v2";
 const brokenRepoNamesToDelete = new Set(["Repo2", "Repo 2", "Nike"]);
 
-const navItems: NavSection[] = ["Repo", "Chat", "Connected Apps", "Assets"];
+const navItems: NavSection[] = ["Repo", "Connected Apps", "Create"];
+const marketingActions: MarketingAction[] = [
+  {
+    id: "presentation-gamma",
+    title: "Create a presentation",
+    appName: "Gamma",
+    appLogo: "https://www.google.com/s2/favicons?domain=gamma.app&sz=128",
+    description: "Create an on-brand presentation with Gamma.",
+    enabled: true,
+  },
+  {
+    id: "landing-page-lovable",
+    title: "Build a landing page",
+    appName: "Lovable",
+    appLogo: "https://www.google.com/s2/favicons?domain=lovable.dev&sz=128",
+    description: "Create a branded landing page brief for Lovable.",
+  },
+  {
+    id: "event-invitation-canva",
+    title: "Design an event invitation",
+    appName: "Canva",
+    appLogo: "https://www.google.com/s2/favicons?domain=canva.com&sz=128",
+    description: "Create a Canva-ready creative brief for an invitation asset.",
+  },
+  {
+    id: "thought-leadership-claude",
+    title: "Write a thought-leadership post",
+    appName: "Claude",
+    appLogo: "https://www.google.com/s2/favicons?domain=claude.ai&sz=128",
+    description: "Generate a repo-grounded writing prompt for a strong POV post.",
+  },
+  {
+    id: "campaign-imagery-chatgpt",
+    title: "Generate campaign imagery",
+    appName: "ChatGPT",
+    appLogo: "https://www.google.com/s2/favicons?domain=chatgpt.com&sz=128",
+    description: "Create an image-generation prompt that uses your brand assets and rules.",
+  },
+  {
+    id: "product-interface-figma",
+    title: "Design a product interface",
+    appName: "Figma",
+    appLogo: "https://www.google.com/s2/favicons?domain=figma.com&sz=128",
+    description: "Create a Figma prompt for an interface that follows brand and product guidance.",
+  },
+];
 const recommendedApps = [
   {
     name: "Claude",
@@ -271,6 +338,7 @@ function createWorkspace(repo: RepoState = initialRepo, name?: string): Workspac
   return {
     id: createId("workspace"),
     name: workspaceName,
+    visibility: "public",
     repo: {
       ...initialRepo,
       ...repo,
@@ -717,8 +785,8 @@ function parseIdentityMarkdown(markdown: string) {
 
 function isImageGenerationPrompt(prompt: string) {
   const normalized = prompt.toLowerCase();
-  const hasCreationIntent = /\b(generate|create|make|design|mock\s?up|mockup|draft|produce)\b/.test(normalized);
-  const hasVisualTarget = /\b(image|ad|advertisement|mock\s?up|mockup|visual|poster|banner|social graphic|creative|asset)\b/.test(normalized);
+  const hasCreationIntent = /\b(generate|generated|generating|create|created|creating|make|made|design|designed|mock\s?up|mockup|draft|produce|produced|producing)\b/.test(normalized);
+  const hasVisualTarget = /\b(image|imagery|picture|photo|graphic|illustration|ad|advertisement|mock\s?up|mockup|visual|poster|banner|social graphic|creative|asset)\b/.test(normalized);
   return hasCreationIntent && hasVisualTarget;
 }
 
@@ -935,6 +1003,118 @@ function getRepoCompleteness(repo: RepoState) {
   };
 }
 
+function getBrandContext({
+  contentType,
+  workspace,
+}: {
+  contentType: "presentation";
+  workspace: WorkspaceState;
+}): BrandCreationContext {
+  void contentType;
+  const repo = workspace.repo;
+  const messaging = repo.messaging[0];
+
+  return {
+    brandName: repo.company.name || workspace.name || "Untitled brand",
+    websiteUrl: repo.company.website,
+    identity: getRepoIdentity(repo),
+    messaging: {
+      primaryValueProposition: messaging?.valueProps[0] ?? messaging?.positioning ?? "",
+      keyMessages: messaging?.keyMessages ?? [],
+      differentiators: messaging?.proofPoints ?? [],
+    },
+    voice: {
+      characteristics: repo.brand.voice,
+      rules: repo.brand.rules,
+    },
+    audiences: getRepoAudienceSettings(repo),
+    colors: getRepoColors(repo),
+    typography: getRepoTypography(repo),
+    assets: repo.assets
+      .filter((asset) => {
+        if (asset.type !== "Image" || !asset.url) return false;
+        if (asset.metadata.includes("generated")) return false;
+        return /^https?:\/\//.test(asset.url);
+      })
+      .map((asset) => ({
+        name: asset.name,
+        url: asset.url as string,
+        description: asset.description,
+        kind: classifyRepoAsset(asset),
+      }))
+      .filter((asset) => ["logo", "icon", "element", "imagery"].includes(asset.kind))
+      .slice(0, 12),
+  };
+}
+
+type GammaStartResponse = {
+  id?: string;
+  error?: string;
+};
+
+type GammaPollResponse =
+  | (GammaCreationResult & { providerStatus?: string })
+  | {
+      id?: string;
+      status: "creating" | "failed";
+      providerStatus?: string;
+      error?: string;
+    };
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Request failed.");
+  }
+
+  return payload;
+}
+
+async function waitForGammaPresentation(generationId: string, accessToken: string): Promise<GammaCreationResult> {
+  const maxAttempts = 30;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 2500 : 5000));
+
+    const response = await fetch(`/api/create/gamma/${encodeURIComponent(generationId)}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const payload = await readJsonResponse<GammaPollResponse>(response);
+
+    if (payload.status === "complete") {
+      return payload;
+    }
+
+    if (payload.status === "failed") {
+      throw new Error(payload.error || "Gamma could not create this presentation.");
+    }
+  }
+
+  throw new Error("Gamma is still creating this presentation. Try opening this workflow again in a minute.");
+}
+
+async function createGammaPresentation(request: PresentationCreationRequest, accessToken: string): Promise<GammaCreationResult> {
+  const response = await fetch("/api/create/gamma", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  const payload = await readJsonResponse<GammaStartResponse>(response);
+
+  if (!payload.id) {
+    throw new Error("Gamma did not return a generation ID.");
+  }
+
+  return waitForGammaPresentation(payload.id, accessToken);
+}
+
 function sourceDocumentsToSectionUrls(sources: SourceDocument[]) {
   return sources.reduce<Partial<Record<RepoKind, string[]>>>((accumulator, source) => {
     const section = sectionForSource(source);
@@ -985,12 +1165,15 @@ export default function Home() {
   const [oauthConnections, setOauthConnections] = useState<OAuthConnectionView[]>([]);
   const [oauthConnectionStatus, setOauthConnectionStatus] = useState<"idle" | "loading" | "revoking" | "error">("idle");
   const [oauthConnectionError, setOauthConnectionError] = useState("");
+  const [externalConnections, setExternalConnections] = useState<ExternalConnectionView[]>([]);
+  const [externalConnectionStatus, setExternalConnectionStatus] = useState<"idle" | "loading" | "connecting" | "saving" | "revoking" | "error">("idle");
+  const [externalConnectionError, setExternalConnectionError] = useState("");
   const [developerSettingsOpen, setDeveloperSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [themePreferenceReady, setThemePreferenceReady] = useState(false);
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Local only");
-  const [section, setSection] = useState<NavSection>("Repo");
+  const [section, setSection] = useState<NavSection>("Create");
   const [repoTab, setRepoTab] = useState<RepoKind>("Brand Basics");
   const [brandBasicsStatus, setBrandBasicsStatus] = useState("Auto saved.");
   const [colorsStatus, setColorsStatus] = useState("Auto saved.");
@@ -1021,6 +1204,14 @@ export default function Home() {
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [connectGuideAppName, setConnectGuideAppName] = useState<string | null>(null);
+  const [gammaApiKeyModalOpen, setGammaApiKeyModalOpen] = useState(false);
+  const [gammaApiKeyDraft, setGammaApiKeyDraft] = useState("");
+  const [gammaDrawerOpen, setGammaDrawerOpen] = useState(false);
+  const [gammaDrawerMounted, setGammaDrawerMounted] = useState(false);
+  const [gammaPrompt, setGammaPrompt] = useState("");
+  const [gammaStatus, setGammaStatus] = useState<PresentationCreationStatus>("idle");
+  const [gammaResult, setGammaResult] = useState<GammaCreationResult | null>(null);
+  const [gammaError, setGammaError] = useState("");
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
   const repo = activeWorkspace?.repo ?? initialRepo;
@@ -1035,8 +1226,10 @@ export default function Home() {
       const haystack = [candidate.name, candidate.clientId, ...candidate.redirectUris].join(" ").toLowerCase();
       return app.aliases.some((alias) => haystack.includes(alias));
     });
+    const externalConnection =
+      app.name === "Gamma" ? externalConnections.find((candidate) => candidate.provider === "gamma") ?? null : null;
 
-    return { ...app, connectionRecord: connection ?? null };
+    return { ...app, connectionRecord: connection ?? null, externalConnectionRecord: externalConnection };
   });
   const connectGuideApp = connectGuideAppName ? recommendedApps.find((app) => app.name === connectGuideAppName) ?? null : null;
 
@@ -1082,8 +1275,34 @@ export default function Home() {
   }, [theme, themePreferenceReady]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") !== "gamma") return;
+
+    const timer = window.setTimeout(() => {
+      setSection("Connected Apps");
+      if (params.get("status") === "error") {
+        setExternalConnectionStatus("error");
+        setExternalConnectionError(params.get("error") ?? "Gamma connection failed.");
+      } else {
+        setExternalConnectionStatus("idle");
+        setExternalConnectionError("");
+        if (currentUser && isSupabaseConfigured) {
+          void loadExternalConnections();
+        }
+      }
+
+      window.history.replaceState({}, "", window.location.pathname);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     if ((section !== "Settings" && section !== "Connected Apps") || !currentUser || !isSupabaseConfigured) return;
     void loadOAuthConnections();
+    void loadExternalConnections();
     if (section === "Settings") {
       void loadIntegrationTokens();
     }
@@ -1316,6 +1535,9 @@ export default function Home() {
         user_id: currentUser.id,
         name: workspace.name,
         data: workspace,
+        account_slug: normalizeAccountName(getAccountName(currentUser)),
+        repo_slug: getRepoSlug(workspace),
+        visibility: workspace.visibility ?? "public",
         updated_at: new Date().toISOString(),
       }));
 
@@ -1405,9 +1627,16 @@ export default function Home() {
     updateActiveWorkspace((workspace) => ({ ...workspace, chatMessages: updater(workspace.chatMessages) }));
   }
 
-  function startNewChat() {
+  function startNewCreate() {
+    setSection("Create");
     setChatInput("");
     setChatStatus("idle");
+    setGammaDrawerOpen(false);
+    setGammaDrawerMounted(false);
+    setGammaPrompt("");
+    setGammaStatus("idle");
+    setGammaResult(null);
+    setGammaError("");
     updateChatMessages(() => createWelcomeChat());
     setMobileNavOpen(false);
   }
@@ -1470,6 +1699,55 @@ export default function Home() {
     window.setTimeout(() => {
       setAssetDrawerAssetId(null);
     }, drawerAnimationMs);
+  }
+
+  function openGammaPresentationDrawer() {
+    setGammaPrompt("");
+    setGammaStatus("idle");
+    setGammaResult(null);
+    setGammaError("");
+    setGammaDrawerMounted(true);
+    setGammaDrawerOpen(false);
+    window.setTimeout(() => {
+      setGammaDrawerOpen(true);
+    }, 0);
+  }
+
+  function closeGammaPresentationDrawer() {
+    setGammaDrawerOpen(false);
+    window.setTimeout(() => {
+      setGammaDrawerMounted(false);
+      setGammaPrompt("");
+      setGammaStatus("idle");
+      setGammaResult(null);
+      setGammaError("");
+    }, drawerAnimationMs);
+  }
+
+  async function submitGammaPresentation() {
+    if (!activeWorkspace || !gammaPrompt.trim() || gammaStatus === "creating") return;
+
+    setGammaStatus("creating");
+    setGammaError("");
+    setGammaResult(null);
+
+    const request: PresentationCreationRequest = {
+      type: "presentation",
+      provider: "gamma",
+      prompt: gammaPrompt.trim(),
+      brandId: activeWorkspace.id,
+      brandContext: getBrandContext({ workspace: activeWorkspace, contentType: "presentation" }),
+    };
+
+    try {
+      const accessToken = await getCurrentAccessToken();
+      const result = await createGammaPresentation(request, accessToken);
+      setGammaResult(result);
+      setGammaStatus("success");
+    } catch (error) {
+      setGammaError(error instanceof Error ? error.message : "Something went wrong while sending this request to Gamma.");
+      setGammaStatus("error");
+    }
   }
 
   function openSectionMarkdownImportDrawer(tab: RepoKind) {
@@ -2062,6 +2340,86 @@ export default function Home() {
     } catch (error) {
       setOauthConnectionStatus("error");
       setOauthConnectionError(error instanceof Error ? error.message : "Unable to revoke connected app.");
+    }
+  }
+
+  async function loadExternalConnections() {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setExternalConnectionStatus("loading");
+      setExternalConnectionError("");
+      const response = await fetch("/api/external/connections", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to load external app connections.");
+      }
+
+      setExternalConnections(payload.connections ?? []);
+      setExternalConnectionStatus("idle");
+    } catch (error) {
+      setExternalConnectionStatus("error");
+      setExternalConnectionError(error instanceof Error ? error.message : "Unable to load external app connections.");
+    }
+  }
+
+  async function revokeExternalConnection(provider: string) {
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setExternalConnectionStatus("revoking");
+      setExternalConnectionError("");
+      const response = await fetch(`/api/external/connections/${encodeURIComponent(provider)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to revoke external app connection.");
+      }
+
+      setExternalConnections((current) => current.filter((connection) => connection.provider !== provider));
+      setExternalConnectionStatus("idle");
+    } catch (error) {
+      setExternalConnectionStatus("error");
+      setExternalConnectionError(error instanceof Error ? error.message : "Unable to revoke external app connection.");
+    }
+  }
+
+  async function saveGammaApiKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setExternalConnectionStatus("saving");
+      setExternalConnectionError("");
+      const response = await fetch("/api/external/gamma/api-key", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ apiKey: gammaApiKeyDraft.trim() }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to save Gamma API key.");
+      }
+
+      setGammaApiKeyDraft("");
+      setGammaApiKeyModalOpen(false);
+      await loadExternalConnections();
+      setExternalConnectionStatus("idle");
+    } catch (error) {
+      setExternalConnectionStatus("error");
+      setExternalConnectionError(error instanceof Error ? error.message : "Unable to save Gamma API key.");
     }
   }
 
@@ -2932,13 +3290,13 @@ export default function Home() {
                   <NavIcon item={item} />
                   <span>{item}</span>
                 </button>
-                {item === "Chat" ? (
+                {item === "Create" ? (
                   <button
-                    aria-label="New chat"
+                    aria-label="New Create"
                     className="nav-icon-button"
                     disabled={chatStatus !== "idle"}
-                    onClick={startNewChat}
-                    title="New chat"
+                    onClick={startNewCreate}
+                    title="New Create"
                     type="button"
                   >
                     <span aria-hidden="true" />
@@ -2998,6 +3356,16 @@ export default function Home() {
                       </button>
                     );
                   })}
+                  <button
+                    className={section === "Assets" ? "active" : ""}
+                    onClick={() => {
+                      setSection("Assets");
+                      setMobileNavOpen(false);
+                    }}
+                    type="button"
+                  >
+                    Assets
+                  </button>
                 </div>
               )}
             </div>
@@ -3018,6 +3386,94 @@ export default function Home() {
       </aside>
 
       <section className="workspace">
+        {section === "Create" && (
+          <section className="actions-page">
+            <header className="actions-header">
+              <h1>Create</h1>
+              <p>
+                Turn repo knowledge into better work. Each action creates a structured prompt for the app that should do the job.
+              </p>
+            </header>
+            <div className="action-card-grid">
+              {marketingActions.map((action) => (
+                <button
+                  className={action.enabled ? "action-card" : "action-card is-placeholder"}
+                  disabled={!action.enabled}
+                  key={action.id}
+                  onClick={action.enabled ? openGammaPresentationDrawer : undefined}
+                  type="button"
+                >
+                  <span className="action-app-logo">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img alt={`${action.appName} logo`} src={action.appLogo} />
+                  </span>
+                  <span>
+                    <strong>{action.title}</strong>
+                    <em>with {action.appName}</em>
+                  </span>
+                  <small>{action.description}</small>
+                  {!action.enabled ? <small className="action-card-status">Coming soon</small> : null}
+                </button>
+              ))}
+            </div>
+            <section className={`actions-chat ${hasChatConversation ? "has-conversation" : "is-empty"}`}>
+              {hasChatConversation ? (
+                <div className="messages">
+                  {chatMessages.filter((message) => message.id !== "welcome").map((message) => (
+                    <article className={message.role} key={message.id}>
+                      <p>{message.text}</p>
+                      {message.generatedImage ? (
+                        <div className="chat-generated-image">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img alt="Generated BrandRepo mockup" src={message.generatedImage.dataUrl} />
+                          <button
+                            className="small-action"
+                            disabled={message.generatedImage.saved}
+                            onClick={() => void saveGeneratedChatImage(message)}
+                            type="button"
+                          >
+                            {message.generatedImage.saved ? "Saved to Assets" : "Save to Assets"}
+                          </button>
+                        </div>
+                      ) : null}
+                      {message.assetPreviews?.length ? (
+                        <div className="chat-asset-previews">
+                          {message.assetPreviews.map((asset) => (
+                            <a className="chat-asset-preview" href={asset.url} key={`${message.id}-${asset.id}`} rel="noreferrer" target="_blank">
+                              <span>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img alt={asset.name} src={asset.url} />
+                              </span>
+                              <strong>{asset.name}</strong>
+                              {asset.description && !asset.metadata.includes("generated") ? <small>{asset.description}</small> : null}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                  {chatStatus !== "idle" ? (
+                    <article className="assistant">
+                      <p>{chatStatus === "generating-image" ? "Generating image..." : "Thinking..."}</p>
+                    </article>
+                  ) : null}
+                </div>
+              ) : null}
+              <form className="chat-input" onSubmit={sendChat}>
+                <input
+                  disabled={chatStatus !== "idle"}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder="Ask BrandRepo about your brand or what to create"
+                  value={chatInput}
+                />
+                <button disabled={!chatInput.trim() || chatStatus !== "idle"} type="submit">
+                  {chatStatus === "generating-image" ? "..." : chatStatus === "thinking" ? "..." : "Ask"}
+                </button>
+              </form>
+            </section>
+          </section>
+        )}
+
         {section === "Repo" && (
           <div className="repo-view">
             {!repoOverviewActive ? (
@@ -3044,6 +3500,7 @@ export default function Home() {
                     setIdentityExpanded(true);
                   }
                 }}
+                publicUrl={getRepoCanonicalUrl(getAccountName(currentUser) || "account-name", getRepoSlug(activeWorkspace))}
                 repo={repo}
               />
             ) : null}
@@ -3084,75 +3541,6 @@ export default function Home() {
           </div>
         )}
 
-        {section === "Chat" && (
-          <section className={`chat-layout ${hasChatConversation ? "has-conversation" : "is-empty"}`}>
-            {!hasChatConversation ? (
-              <div className="chat-empty-state">
-                <h1>Ready when you are.</h1>
-              </div>
-            ) : (
-              <div className="messages">
-                {chatMessages.filter((message) => message.id !== "welcome").map((message) => (
-                  <article className={message.role} key={message.id}>
-                    <p>{message.text}</p>
-                    {message.generatedImage ? (
-                      <div className="chat-generated-image">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img alt="Generated BrandRepo mockup" src={message.generatedImage.dataUrl} />
-                        <button
-                          className="small-action"
-                          disabled={message.generatedImage.saved}
-                          onClick={() => void saveGeneratedChatImage(message)}
-                          type="button"
-                        >
-                          {message.generatedImage.saved ? "Saved to Assets" : "Save to Assets"}
-                        </button>
-                      </div>
-                    ) : null}
-                    {message.assetPreviews?.length ? (
-                      <div className="chat-asset-previews">
-                        {message.assetPreviews.map((asset) => (
-                          <a className="chat-asset-preview" href={asset.url} key={`${message.id}-${asset.id}`} rel="noreferrer" target="_blank">
-                            <span>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img alt={asset.name} src={asset.url} />
-                            </span>
-                            <strong>{asset.name}</strong>
-                            {asset.description && !asset.metadata.includes("generated") ? <small>{asset.description}</small> : null}
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {message.citations?.length && !message.generatedImage ? (
-                      <div className="citations">
-                        {message.citations.map((source) => (
-                          <span key={`${message.id}-${source.id}`}>{source.label}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-                {chatStatus !== "idle" ? (
-                  <article className="assistant">
-                    <p>{chatStatus === "generating-image" ? "Generating image..." : "Thinking..."}</p>
-                  </article>
-                ) : null}
-              </div>
-            )}
-            <form className="chat-input" onSubmit={sendChat}>
-              <input
-                disabled={chatStatus !== "idle"}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Ask BrandRepo about your brand"
-                value={chatInput}
-              />
-              <button disabled={!chatInput.trim() || chatStatus !== "idle"} type="submit">
-                {chatStatus === "generating-image" ? "..." : chatStatus === "thinking" ? "..." : "Ask"}
-              </button>
-            </form>
-          </section>
-        )}
-
         {section === "Campaigns" && (
           <div className="campaign-list">
             {repo.campaigns.length ? repo.campaigns.map((campaign) => (
@@ -3190,51 +3578,25 @@ export default function Home() {
 
         {section === "Connected Apps" && (
           <section className="connected-apps-page">
-            <header className="topbar">
-              <div>
-                <p className="eyebrow">Integrations</p>
-                <h1>Connected Apps</h1>
-              </div>
-              <button className="secondary" disabled={oauthConnectionStatus === "loading"} onClick={loadOAuthConnections} type="button">
-                {oauthConnectionStatus === "loading" ? "Refreshing..." : "Refresh"}
-              </button>
+            <header className="connected-apps-header">
+              <h1>Connected Apps</h1>
+              <p>
+                Connect BrandRepo to the tools where marketing work happens so approved messaging, voice, identity assets, colors, and repo markdown travel with the work.
+              </p>
             </header>
-            <section className="connected-apps-hero">
-              <div>
-                <h2>Connect BrandRepo to the tools where marketing work happens.</h2>
-                <p>
-                  External apps use BrandRepo as the source of truth for approved messaging, voice, identity assets, colors, and repo markdown.
-                </p>
-              </div>
-              <dl>
-                <div>
-                  <dt>Connected</dt>
-                  <dd>{oauthConnections.length}</dd>
-                </div>
-                <div>
-                  <dt>Access</dt>
-                  <dd>Read-only</dd>
-                </div>
-              </dl>
-            </section>
             {oauthConnectionError ? <p className="import-error">{oauthConnectionError}</p> : null}
+            {externalConnectionError ? <p className="import-error">{externalConnectionError}</p> : null}
             <section className="recommended-apps">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Recommended Apps</p>
-                  <h2>Start with these connections</h2>
-                </div>
-              </div>
               <div className="recommended-app-grid">
                 {recommendedAppCards.map((app) => (
-                  <article className={app.connectionRecord ? "app-card connected" : "app-card"} key={app.name}>
+                  <article className={app.connectionRecord || app.externalConnectionRecord ? "app-card connected" : "app-card"} key={app.name}>
                     <div className="app-card-header">
                       <span className="app-logo">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img alt={`${app.name} logo`} src={app.logo} />
                       </span>
-                      <span className={app.connectionRecord ? "connection-badge connected" : "connection-badge"}>
-                        {app.connectionRecord ? "Connected" : "Not connected"}
+                      <span className={app.connectionRecord || app.externalConnectionRecord ? "connection-badge connected" : "connection-badge"}>
+                        {app.connectionRecord || app.externalConnectionRecord ? "Connected" : "Not connected"}
                       </span>
                     </div>
                     <div className="app-card-body">
@@ -3242,7 +3604,32 @@ export default function Home() {
                       <p>{app.description}</p>
                     </div>
                     <div className="app-card-footer">
-                      {app.connectionRecord ? (
+                      {app.externalConnectionRecord ? (
+                        <>
+                          <small>{app.externalConnectionRecord.name}</small>
+                          <button
+                            className="danger-secondary"
+                            disabled={externalConnectionStatus === "revoking"}
+                            onClick={() => revokeExternalConnection(app.externalConnectionRecord?.provider ?? "")}
+                            type="button"
+                          >
+                            Revoke
+                          </button>
+                        </>
+                      ) : app.name === "Gamma" ? (
+                        <button
+                          className="app-connect-pill"
+                          disabled={externalConnectionStatus === "saving"}
+                          onClick={() => {
+                            setGammaApiKeyDraft("");
+                            setExternalConnectionError("");
+                            setGammaApiKeyModalOpen(true);
+                          }}
+                          type="button"
+                        >
+                          Connect Gamma
+                        </button>
+                      ) : app.connectionRecord ? (
                         <>
                           <small>
                             {app.connectionRecord.lastUsedAt
@@ -3521,6 +3908,19 @@ export default function Home() {
         />
       ) : null}
       {connectGuideApp ? <AppConnectModal app={connectGuideApp} onClose={() => setConnectGuideAppName(null)} /> : null}
+      {gammaApiKeyModalOpen ? (
+        <GammaApiKeyModal
+          apiKey={gammaApiKeyDraft}
+          error={externalConnectionError}
+          isSaving={externalConnectionStatus === "saving"}
+          onChangeApiKey={setGammaApiKeyDraft}
+          onClose={() => {
+            setGammaApiKeyModalOpen(false);
+            setGammaApiKeyDraft("");
+          }}
+          onSubmit={saveGammaApiKey}
+        />
+      ) : null}
       {messagingImportDrawerMounted ? (
         <SectionMarkdownImportDrawer
           isOpen={messagingImportDrawerOpen}
@@ -3541,6 +3941,20 @@ export default function Home() {
             closeAssetDrawer();
           }}
           onUpdate={updateAssetDetails}
+        />
+      ) : null}
+      {gammaDrawerMounted ? (
+        <GammaPresentationDrawer
+          brandName={repo.company.name || activeWorkspace?.name || "Untitled brand"}
+          error={gammaError}
+          isOpen={gammaDrawerOpen}
+          onBackToCreate={closeGammaPresentationDrawer}
+          onCancel={closeGammaPresentationDrawer}
+          onChangePrompt={setGammaPrompt}
+          onSubmit={submitGammaPresentation}
+          prompt={gammaPrompt}
+          result={gammaResult}
+          status={gammaStatus}
         />
       ) : null}
     </main>
@@ -4226,20 +4640,20 @@ function BrandRepoLogo() {
 }
 
 function NavIcon({ item }: { item: NavSection }) {
+  if (item === "Create") {
+    return (
+      <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z" />
+      </svg>
+    );
+  }
+
   if (item === "Repo") {
     return (
       <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
         <path d="M4 7.5 12 3l8 4.5-8 4.5L4 7.5Z" />
         <path d="M4 12 12 16.5 20 12" />
         <path d="M4 16.5 12 21l8-4.5" />
-      </svg>
-    );
-  }
-
-  if (item === "Chat") {
-    return (
-      <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
-        <path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5A3.5 3.5 0 0 1 15.5 15H11l-5 4v-4.4A3.5 3.5 0 0 1 5 12V6.5Z" />
       </svg>
     );
   }
@@ -4275,10 +4689,12 @@ function NavIcon({ item }: { item: NavSection }) {
 function RepoOverview({
   onDeleteRepo,
   onSelectSection,
+  publicUrl,
   repo,
 }: {
   onDeleteRepo: () => void;
   onSelectSection: (tab: RepoKind) => void;
+  publicUrl: string;
   repo: RepoState;
 }) {
   const completeness = getRepoCompleteness(repo);
@@ -4297,6 +4713,15 @@ function RepoOverview({
       <div className="repo-progress-track" aria-hidden="true">
         <span style={{ width: `${completeness.percentage}%` }} />
       </div>
+      <section className="repo-public-url">
+        <div>
+          <strong>Public URL</strong>
+          <p>This is the shareable BrandRepo link for people and AI tools.</p>
+        </div>
+        <a href={publicUrl} rel="noreferrer" target="_blank">
+          {publicUrl}
+        </a>
+      </section>
       <div className="repo-overview-grid">
         {completeness.sections.map((section) => (
           <button className="repo-overview-card" key={section.tab} onClick={() => onSelectSection(section.tab)} type="button">
@@ -4365,6 +4790,119 @@ function NewRepoModal({
   );
 }
 
+function GammaPresentationDrawer({
+  brandName,
+  error,
+  isOpen,
+  onBackToCreate,
+  onCancel,
+  onChangePrompt,
+  onSubmit,
+  prompt,
+  result,
+  status,
+}: {
+  brandName: string;
+  error: string;
+  isOpen: boolean;
+  onBackToCreate: () => void;
+  onCancel: () => void;
+  onChangePrompt: (value: string) => void;
+  onSubmit: () => void;
+  prompt: string;
+  result: GammaCreationResult | null;
+  status: PresentationCreationStatus;
+}) {
+  return (
+    <div className={`drawer-layer ${isOpen ? "open" : ""}`} role="presentation">
+      <button aria-label="Close Create presentation drawer" className="drawer-backdrop" onClick={onCancel} type="button" />
+      <aside aria-label="Create a presentation" className="markdown-drawer action-prompt-drawer">
+        <header>
+          <div className="action-drawer-title">
+            <span className="action-app-logo compact">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Gamma logo" src="https://www.google.com/s2/favicons?domain=gamma.app&sz=128" />
+            </span>
+            <div>
+              <p className="eyebrow">Gamma</p>
+              <h2>Create a presentation</h2>
+            </div>
+          </div>
+          <button className="secondary" onClick={onCancel} type="button">
+            Close
+          </button>
+        </header>
+        {status === "success" && result ? (
+          <div className="gamma-flow-state">
+            <h3>Your presentation is ready</h3>
+            <p>{prompt}</p>
+            <div className="gamma-flow-actions">
+              <a className="button-link" href={result.url} rel="noreferrer" target="_blank">
+                Open in Gamma →
+              </a>
+              <button className="secondary" onClick={onBackToCreate} type="button">
+                Back to Create
+              </button>
+            </div>
+          </div>
+        ) : status === "error" ? (
+          <div className="gamma-flow-state">
+            <h3>We could not create the presentation</h3>
+            <p>{error || "Something went wrong while sending this request to Gamma."}</p>
+            <div className="gamma-flow-actions">
+              <button disabled={!prompt.trim()} onClick={onSubmit} type="button">
+                Try again
+              </button>
+              <button className="secondary" onClick={onBackToCreate} type="button">
+                Back to Create
+              </button>
+            </div>
+          </div>
+        ) : status === "creating" ? (
+          <div className="gamma-flow-state">
+            <span className="gamma-loader" aria-hidden="true" />
+            <h3>Creating your presentation</h3>
+            <p>Applying your BrandRepo guidelines and sending the presentation to Gamma…</p>
+          </div>
+        ) : (
+          <div className="action-prompt-body">
+            <div className="gamma-flow-intro">
+              <p>Tell us what you want to make. BrandRepo will apply your brand automatically and create it with Gamma.</p>
+            </div>
+            <label className="gamma-main-prompt">
+              What are you creating?
+              <textarea
+                onChange={(event) => onChangePrompt(event.target.value)}
+                placeholder="An investor presentation introducing our company, market opportunity, product, traction, and vision."
+                value={prompt}
+              />
+            </label>
+            <div className="gamma-context-row">
+              <div>
+                <strong>Brand</strong>
+                <span>{brandName} ✓</span>
+                <p>BrandRepo will use the relevant visual identity, messaging, voice, and audience guidelines.</p>
+              </div>
+              <div>
+                <strong>Creating with</strong>
+                <span>Gamma</span>
+              </div>
+            </div>
+            <div className="gamma-flow-actions">
+              <button disabled={!prompt.trim()} onClick={onSubmit} type="button">
+                Create with Gamma →
+              </button>
+              <button className="secondary" onClick={onCancel} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 function AppConnectModal({
   app,
   onClose,
@@ -4407,6 +4945,80 @@ function AppConnectModal({
           </button>
         </footer>
       </section>
+    </div>
+  );
+}
+
+function GammaApiKeyModal({
+  apiKey,
+  error,
+  isSaving,
+  onChangeApiKey,
+  onClose,
+  onSubmit,
+}: {
+  apiKey: string;
+  error: string;
+  isSaving: boolean;
+  onChangeApiKey: (value: string) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="modal-layer" role="presentation">
+      <button aria-label="Close Gamma connection" className="modal-backdrop" onClick={onClose} type="button" />
+      <form aria-label="Connect Gamma with API key" className="connect-modal gamma-api-key-modal" onSubmit={onSubmit}>
+        <header>
+          <span className="app-logo large">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="Gamma logo" src="https://cdn.simpleicons.org/gamma/8F5CF7" />
+          </span>
+          <div>
+            <p className="eyebrow">Gamma</p>
+            <h2>Connect with API key</h2>
+          </div>
+          <button aria-label="Close" className="icon-close" onClick={onClose} type="button">
+            ×
+          </button>
+        </header>
+        <div className="gamma-api-key-copy">
+          <p>
+            For early beta users, BrandRepo connects to Gamma with your personal Gamma API key. The key is encrypted
+            before storage and used only from BrandRepo server routes to create presentations in your Gamma account.
+          </p>
+        </div>
+        <ol className="connect-steps">
+          <li>Open Gamma in your browser.</li>
+          <li>Go to Settings & Members.</li>
+          <li>Open the API key tab.</li>
+          <li>Create an API key and copy it.</li>
+          <li>Paste the key here and save.</li>
+        </ol>
+        <label className="gamma-api-key-field">
+          Gamma API key
+          <input
+            autoComplete="off"
+            onChange={(event) => onChangeApiKey(event.target.value)}
+            placeholder="sk-gamma-..."
+            type="password"
+            value={apiKey}
+          />
+        </label>
+        {error ? <p className="import-error">{error}</p> : null}
+        <footer>
+          <a href="https://help.gamma.app/en/articles/11962420-does-gamma-have-an-api" rel="noreferrer" target="_blank">
+            Where to find this
+          </a>
+          <div className="modal-actions">
+            <button className="secondary-action" onClick={onClose} type="button">
+              Cancel
+            </button>
+            <button disabled={isSaving || !apiKey.trim()} type="submit">
+              {isSaving ? "Saving..." : "Save connection"}
+            </button>
+          </div>
+        </footer>
+      </form>
     </div>
   );
 }

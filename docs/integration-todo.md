@@ -67,6 +67,17 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [x] Claude MCP support using the same Repo Context Service.
 - [ ] Figma integration for logos, colors, typography, and identity rules.
 - [ ] Canva integration for approved assets and brand-kit workflows.
-- [ ] Gamma integration for decks and generated brand-aware presentation assets.
+- [x] Add initial direct Gamma Generate API route for Create -> presentation.
+- [x] Add Connect Gamma OAuth flow and encrypted outbound provider token storage.
+- [ ] Register BrandRepo as a Gamma OAuth app and confirm production OAuth endpoint values.
+- [x] Support Gamma public PKCE OAuth clients with `token_endpoint_auth_method=none`.
+- [x] Add Gamma API-key beta connection flow using encrypted per-user keys.
+- [ ] Add `EXTERNAL_TOKEN_ENCRYPTION_KEY` to local and Vercel environments.
+- [ ] Add future OAuth vars only after Gamma accepts BrandRepo redirect URIs: `GAMMA_CLIENT_ID`, `GAMMA_AUTHORIZATION_URL`, `GAMMA_TOKEN_URL`, `GAMMA_OAUTH_SCOPES`, and `GAMMA_TOKEN_ENDPOINT_AUTH_METHOD`.
+- [ ] Run updated `supabase/schema.sql` in Supabase SQL Editor to create external connection storage.
+- [ ] Test Connect Gamma API-key flow against a real Gamma account.
+- [ ] Test Create -> Gamma against a connected user-owned Gamma API key.
+- [ ] Decide whether to support Gamma themes through stored `themeId` values.
+- [ ] Save generated Gamma links back into BrandRepo Assets or Create history.
 - [ ] Draft workflow for external tools to propose repo updates without directly overwriting sections.
 - [ ] Save generated external assets back into BrandRepo after explicit user approval.

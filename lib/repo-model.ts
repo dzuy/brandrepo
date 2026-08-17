@@ -168,6 +168,7 @@ export type ChatMessage = {
 export type WorkspaceState = {
   id: string;
   name: string;
+  visibility?: "public" | "unlisted" | "private";
   repo: RepoState;
   chatMessages: ChatMessage[];
   generatedDraft: string;
