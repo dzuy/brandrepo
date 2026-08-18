@@ -8,17 +8,20 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
   classifyRepoAsset,
   generateSectionMarkdown,
+  getRepoApprovedClaims,
   getRepoAudienceSettings,
   getRepoChannelSeo,
   getRepoColorRules,
   getRepoColors,
   getRepoContext,
   getRepoIdentity,
+  getRepoProducts,
   getRepoSectionNotes,
   getRepoTypography,
   sectionMarkdownFileName,
 } from "../lib/repo-context";
 import {
+  ApprovedClaim,
   Asset,
   Audience,
   AudienceSettings,
@@ -26,6 +29,7 @@ import {
   ChatMessage,
   IdentitySettings,
   Messaging,
+  Product,
   RepoKind,
   RepoState,
   Source,
@@ -96,6 +100,19 @@ type IdentityField = keyof IdentitySettings;
 type MessagingField = "primaryValueProposition" | "keyMessages" | "targetCustomer" | "mainCustomerProblem" | "keyDifferentiators" | "tagline";
 type VoiceToneField = "voiceCharacteristics" | "writingRules" | "wordsToUse" | "wordsToAvoid";
 type TypographyField = "fontNames" | "weights" | "usageRules";
+type ProductField =
+  | "name"
+  | "description"
+  | "status"
+  | "primaryAudience"
+  | "problemsSolved"
+  | "keyCapabilities"
+  | "useCases"
+  | "differentiators"
+  | "limitations"
+  | "productUrl"
+  | "supportingAssetIds";
+type ApprovedClaimField = "claim" | "status" | "appliesTo" | "productId" | "evidence" | "notes" | "reviewDate";
 
 type SourceDocument = {
   id: string;
@@ -330,6 +347,42 @@ function createWelcomeChat(): ChatMessage[] {
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createProduct(): Product {
+  return {
+    id: createId("product"),
+    name: "Untitled product",
+    description: "",
+    status: "Available",
+    primaryAudience: "",
+    problemsSolved: [],
+    keyCapabilities: [],
+    useCases: [],
+    differentiators: [],
+    limitations: [],
+    productUrl: "",
+    supportingAssetIds: [],
+    features: [],
+    benefits: [],
+    pricing: "",
+    positioning: "",
+    sources: [],
+  };
+}
+
+function createApprovedClaim(status: ApprovedClaim["status"] = "Approved"): ApprovedClaim {
+  return {
+    id: createId("claim"),
+    claim: "",
+    status,
+    appliesTo: "",
+    productId: "",
+    evidence: "",
+    notes: "",
+    reviewDate: "",
+    sources: [],
+  };
 }
 
 function createWorkspace(repo: RepoState = initialRepo, name?: string): WorkspaceState {
@@ -783,6 +836,84 @@ function parseIdentityMarkdown(markdown: string) {
   };
 }
 
+function cleanProductDescription(content: string) {
+  const cleaned = cleanMarkdownValue(
+    content
+      .split("\n")
+      .filter((line) => !/^status\s*:/i.test(stripMarkdownFormatting(line).trim()))
+      .filter((line) => !/^product url\s*:/i.test(stripMarkdownFormatting(line).trim()))
+      .join("\n"),
+  );
+
+  return cleaned;
+}
+
+function lineValue(content: string, label: string) {
+  const match = content.match(new RegExp(`^${label}\\s*:\\s*(.+)$`, "im"));
+  return cleanMarkdownValue(match?.[1]);
+}
+
+function parseProductMarkdown(markdown: string): Product[] {
+  const sections = parseMarkdownSections(markdown);
+  const productSections = sections.filter((section) => section.level === 2 && !["products", "notes"].includes(section.title));
+
+  return productSections.map((section) => {
+    const nestedSections = parseMarkdownSections(section.content);
+    const descriptionSection = findMarkdownSection(nestedSections, ["description", "short description"]);
+    const audienceSection = findMarkdownSection(nestedSections, ["primary audience", "audience"]);
+    const differentiators = extractMarkdownItems(findMarkdownSection(nestedSections, ["differentiators", "key differentiators"]));
+
+    return {
+      ...createProduct(),
+      id: createId("product-md-import"),
+      name: section.displayTitle || "Untitled product",
+      status: (lineValue(section.content, "Status") as Product["status"]) || "",
+      description: descriptionSection ? cleanMarkdownValue(descriptionSection) : cleanProductDescription(section.content.split(/^#{1,6}\s+/m)[0] ?? ""),
+      primaryAudience: audienceSection ? cleanMarkdownValue(audienceSection) : lineValue(section.content, "Primary audience"),
+      problemsSolved: extractMarkdownItems(findMarkdownSection(nestedSections, ["problems solved", "problems"])),
+      keyCapabilities: extractMarkdownItems(findMarkdownSection(nestedSections, ["key capabilities", "capabilities"])),
+      useCases: extractMarkdownItems(findMarkdownSection(nestedSections, ["use cases", "usecases"])),
+      differentiators,
+      limitations: extractMarkdownItems(findMarkdownSection(nestedSections, ["limitations", "not supported", "limitations not supported"])),
+      productUrl: lineValue(section.content, "Product URL"),
+      features: [],
+      benefits: [],
+      positioning: differentiators.join("\n"),
+    };
+  });
+}
+
+function statusFromClaimHeading(title: string): ApprovedClaim["status"] | null {
+  if (title.includes("approved")) return "Approved";
+  if (title.includes("draft")) return "Draft";
+  if (title.includes("expired")) return "Expired";
+  if (title.includes("do not use") || title.includes("do-not-use") || title.includes("prohibited") || title.includes("unsupported")) return "Do not use";
+  return null;
+}
+
+function parseApprovedClaimsMarkdown(markdown: string): ApprovedClaim[] {
+  const sections = parseMarkdownSections(markdown);
+  const claimSections = sections.filter((section) => statusFromClaimHeading(section.title));
+
+  if (claimSections.length) {
+    return claimSections.flatMap((section) => {
+      const status = statusFromClaimHeading(section.title) ?? "Approved";
+      return extractMarkdownItems(section.content).map((claim) => ({
+        ...createApprovedClaim(status),
+        id: createId("claim-md-import"),
+        claim,
+      }));
+    });
+  }
+
+  const claims = extractMarkdownItems(markdown);
+  return claims.map((claim) => ({
+    ...createApprovedClaim("Approved"),
+    id: createId("claim-md-import"),
+    claim,
+  }));
+}
+
 function isImageGenerationPrompt(prompt: string) {
   const normalized = prompt.toLowerCase();
   const hasCreationIntent = /\b(generate|generated|generating|create|created|creating|make|made|design|designed|mock\s?up|mockup|draft|produce|produced|producing)\b/.test(normalized);
@@ -975,6 +1106,26 @@ function getRepoSectionCompleteness(repo: RepoState, tab: RepoKind) {
       hasText(channelSeo.seoPlanning),
       hasText(channelSeo.keywords),
       hasText(channelSeo.successMetrics),
+    ]);
+  }
+
+  if (tab === "Products") {
+    const products = getRepoProducts(repo);
+
+    return countList([
+      products.length > 0,
+      products.some((product) => hasText(product.description)),
+      products.some((product) => product.keyCapabilities.length > 0),
+      products.some((product) => product.useCases.length > 0),
+      products.some((product) => product.limitations.length > 0),
+    ]);
+  }
+
+  if (tab === "Approved Claims") {
+    const claims = getRepoApprovedClaims(repo);
+    return countList([
+      claims.some((claim) => claim.claim.trim() && claim.status === "Approved"),
+      claims.some((claim) => claim.claim.trim() && claim.status === "Do not use"),
     ]);
   }
 
@@ -1183,6 +1334,8 @@ export default function Home() {
   const [identityStatus, setIdentityStatus] = useState("Auto saved.");
   const [voiceToneStatus, setVoiceToneStatus] = useState("Auto saved.");
   const [messagingStatus, setMessagingStatus] = useState("Auto saved.");
+  const [productsStatus, setProductsStatus] = useState("Auto saved.");
+  const [approvedClaimsStatus, setApprovedClaimsStatus] = useState("Auto saved.");
   const [persistenceReady, setPersistenceReady] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatStatus, setChatStatus] = useState<"idle" | "thinking" | "generating-image">("idle");
@@ -1466,6 +1619,26 @@ export default function Home() {
 
     return () => window.clearTimeout(saveTimer);
   }, [channelSeoStatus, repo.channelSeo]);
+
+  useEffect(() => {
+    if (productsStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setProductsStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [productsStatus, repo.products]);
+
+  useEffect(() => {
+    if (approvedClaimsStatus !== "Saving...") return;
+
+    const saveTimer = window.setTimeout(() => {
+      setApprovedClaimsStatus("Auto saved.");
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [approvedClaimsStatus, repo.approvedClaims]);
 
   useEffect(() => {
     if (identityStatus !== "Saving...") return;
@@ -1898,6 +2071,38 @@ export default function Home() {
       }));
       closeMessagingImportDrawer();
       showRepoSection("Channel SEO");
+      return;
+    }
+
+    if (markdownImportSection === "Products") {
+      const parsed = parseProductMarkdown(messagingImportDraft);
+
+      if (!parsed.length) return;
+
+      setProductsStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        products: parsed,
+        activity: ["Imported Products Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      showRepoSection("Products");
+      return;
+    }
+
+    if (markdownImportSection === "Approved Claims") {
+      const parsed = parseApprovedClaimsMarkdown(messagingImportDraft);
+
+      if (!parsed.length) return;
+
+      setApprovedClaimsStatus("Saving...");
+      updateRepo((current) => ({
+        ...current,
+        approvedClaims: parsed,
+        activity: ["Imported Approved Claims Markdown", ...current.activity],
+      }));
+      closeMessagingImportDrawer();
+      showRepoSection("Approved Claims");
       return;
     }
 
@@ -2888,6 +3093,102 @@ export default function Home() {
     }));
   }
 
+  function addProduct() {
+    setProductsStatus("Saving...");
+    const product = createProduct();
+    updateRepo((current) => ({
+      ...current,
+      products: [...getRepoProducts(current), product],
+    }));
+    return product.id;
+  }
+
+  function updateProductField(productId: string, field: ProductField, value: string) {
+    setProductsStatus("Saving...");
+    const listValue = value
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    updateRepo((current) => ({
+      ...current,
+      products: getRepoProducts(current).map((product) =>
+        product.id === productId
+          ? {
+              ...product,
+              [field]:
+                field === "problemsSolved" ||
+                field === "keyCapabilities" ||
+                field === "useCases" ||
+                field === "differentiators" ||
+                field === "limitations" ||
+                field === "supportingAssetIds"
+                  ? listValue
+                  : value,
+              features: field === "keyCapabilities" ? listValue : product.features,
+              benefits: field === "useCases" ? listValue : product.benefits,
+              positioning: field === "differentiators" ? listValue.join("\n") : product.positioning,
+            }
+          : product,
+      ),
+    }));
+  }
+
+  function deleteProduct(productId: string) {
+    setProductsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      products: getRepoProducts(current).filter((product) => product.id !== productId),
+      approvedClaims: getRepoApprovedClaims(current).map((claim) =>
+        claim.productId === productId
+          ? {
+              ...claim,
+              appliesTo: "",
+              productId: "",
+            }
+          : claim,
+      ),
+      messaging: current.messaging.map((message) => ({ ...message, claims: [] })),
+    }));
+  }
+
+  function addApprovedClaim(status: ApprovedClaim["status"] = "Approved") {
+    setApprovedClaimsStatus("Saving...");
+    const claim = createApprovedClaim(status);
+    updateRepo((current) => ({
+      ...current,
+      approvedClaims: [...getRepoApprovedClaims(current), claim],
+      messaging: current.messaging.map((message) => ({ ...message, claims: [] })),
+    }));
+    return claim.id;
+  }
+
+  function updateApprovedClaimField(claimId: string, field: ApprovedClaimField, value: string) {
+    setApprovedClaimsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      approvedClaims: getRepoApprovedClaims(current).map((claim) =>
+        claim.id === claimId
+          ? {
+              ...claim,
+              [field]: value,
+              productId: field === "appliesTo" && value !== "Specific product" ? "" : field === "productId" ? value : claim.productId,
+            }
+          : claim,
+      ),
+      messaging: current.messaging.map((message) => ({ ...message, claims: [] })),
+    }));
+  }
+
+  function deleteApprovedClaim(claimId: string) {
+    setApprovedClaimsStatus("Saving...");
+    updateRepo((current) => ({
+      ...current,
+      approvedClaims: getRepoApprovedClaims(current).filter((claim) => claim.id !== claimId),
+      messaging: current.messaging.map((message) => ({ ...message, claims: [] })),
+    }));
+  }
+
   async function scanSectionUrl(url: string, tab: RepoKind) {
     setSectionScanUrl(url);
     setLastSectionScan(null);
@@ -3508,10 +3809,15 @@ export default function Home() {
               <RepoPanel
                 channelSeoStatus={channelSeoStatus}
                 colorsStatus={colorsStatus}
+                approvedClaimsStatus={approvedClaimsStatus}
+                onAddApprovedClaim={addApprovedClaim}
+                onAddProduct={addProduct}
+                onDeleteApprovedClaim={deleteApprovedClaim}
                 onScanSectionUrl={scanSectionUrl}
                 onUpdateBrandBasics={updateBrandBasics}
                 onAddColorToken={addColorToken}
                 onDeleteColorToken={deleteColorToken}
+                onDeleteProduct={deleteProduct}
                 onOpenAssetDetails={openAssetDrawer}
                 onUploadSectionAssets={(files, tab, assetTag) => void handleUpload(files, undefined, { repoTab: tab, assetTag })}
                 onDeleteSectionMarkdown={deleteSectionMarkdown}
@@ -3526,6 +3832,8 @@ export default function Home() {
                 onUpdateAudienceField={updateAudienceField}
                 onUpdateChannelSeoField={updateChannelSeoField}
                 onUpdateIdentityField={updateIdentityField}
+                onUpdateApprovedClaimField={updateApprovedClaimField}
+                onUpdateProductField={updateProductField}
                 onUpdateTypographyField={updateTypographyField}
                 onUpdateColorRules={updateColorRules}
                 onUpdateColorToken={updateColorToken}
@@ -3535,6 +3843,7 @@ export default function Home() {
                 scanningUrl={sectionScanUrl}
                 tab={repoTab}
                 typographyStatus={typographyStatus}
+                productsStatus={productsStatus}
                 voiceToneStatus={voiceToneStatus}
               />
             ) : null}
@@ -3962,6 +4271,7 @@ export default function Home() {
 }
 
 function RepoPanel({
+  approvedClaimsStatus,
   audiencesStatus,
   brandBasicsStatus,
   channelSeoStatus,
@@ -3970,11 +4280,16 @@ function RepoPanel({
   identityStatus,
   lastSectionScan,
   messagingStatus,
+  onAddApprovedClaim,
   onAddColorToken,
+  onAddProduct,
+  onDeleteApprovedClaim,
   onDeleteColorToken,
+  onDeleteProduct,
   onDeleteSectionMarkdown,
   onOpenAssetDetails,
   onScanSectionUrl,
+  onUpdateApprovedClaimField,
   onUpdateAudienceField,
   onUpdateBrandBasics,
   onUpdateChannelSeoField,
@@ -3982,6 +4297,7 @@ function RepoPanel({
   onUpdateColorToken,
   onUpdateIdentityField,
   onUpdateMessagingField,
+  onUpdateProductField,
   onUpdateSectionMarkdown,
   onUpdateTypographyField,
   onUpdateVoiceToneField,
@@ -3990,9 +4306,11 @@ function RepoPanel({
   repo,
   scanningUrl,
   tab,
+  productsStatus,
   typographyStatus,
   voiceToneStatus,
 }: {
+  approvedClaimsStatus: string;
   audiencesStatus: string;
   brandBasicsStatus: string;
   channelSeoStatus: string;
@@ -4001,11 +4319,16 @@ function RepoPanel({
   identityStatus: string;
   lastSectionScan: { tab: RepoKind; url: string } | null;
   messagingStatus: string;
+  onAddApprovedClaim: (status?: ApprovedClaim["status"]) => string;
   onAddColorToken: () => void;
+  onAddProduct: () => string;
+  onDeleteApprovedClaim: (claimId: string) => void;
   onDeleteColorToken: (colorId: string) => void;
+  onDeleteProduct: (productId: string) => void;
   onDeleteSectionMarkdown: (tab: RepoKind, index: number) => void;
   onOpenAssetDetails: (assetId: string) => void;
   onScanSectionUrl: (url: string, tab: RepoKind) => void;
+  onUpdateApprovedClaimField: (claimId: string, field: ApprovedClaimField, value: string) => void;
   onUpdateAudienceField: (field: keyof AudienceSettings, value: string) => void;
   onUpdateBrandBasics: (field: "name" | "website" | "description" | "about", value: string) => void;
   onUpdateChannelSeoField: (field: keyof ChannelSeoSettings, value: string) => void;
@@ -4013,6 +4336,7 @@ function RepoPanel({
   onUpdateColorToken: (colorId: string, field: "name" | "hex" | "description", value: string) => void;
   onUpdateIdentityField: (field: IdentityField, value: string) => void;
   onUpdateMessagingField: (field: MessagingField, value: string) => void;
+  onUpdateProductField: (productId: string, field: ProductField, value: string) => void;
   onUpdateSectionMarkdown: (tab: RepoKind, index: number, markdown: string) => void;
   onUpdateTypographyField: (field: TypographyField, value: string) => void;
   onUpdateVoiceToneField: (field: VoiceToneField, value: string) => void;
@@ -4021,11 +4345,16 @@ function RepoPanel({
   repo: RepoState;
   scanningUrl: string;
   tab: RepoKind;
+  productsStatus: string;
   typographyStatus: string;
   voiceToneStatus: string;
 }) {
   const [fieldEditTarget, setFieldEditTarget] = useState<{ section: RepoKind; field: string } | null>(null);
   const [fieldEditDrawerOpen, setFieldEditDrawerOpen] = useState(false);
+  const [productDrawerProductId, setProductDrawerProductId] = useState<string | null>(null);
+  const [productDrawerOpen, setProductDrawerOpen] = useState(false);
+  const [claimDrawerClaimId, setClaimDrawerClaimId] = useState<string | null>(null);
+  const [claimDrawerOpen, setClaimDrawerOpen] = useState(false);
   const sectionUrls = getRepoSectionUrls(repo, tab);
   const sectionNotes = getRepoSectionNotes(repo, tab);
   const notes = (
@@ -4092,6 +4421,28 @@ function RepoPanel({
   function closeFieldEditor() {
     setFieldEditDrawerOpen(false);
     window.setTimeout(() => setFieldEditTarget(null), drawerAnimationMs);
+  }
+
+  function openProductEditor(productId: string) {
+    setProductDrawerProductId(productId);
+    setProductDrawerOpen(false);
+    window.setTimeout(() => setProductDrawerOpen(true), 0);
+  }
+
+  function closeProductEditor() {
+    setProductDrawerOpen(false);
+    window.setTimeout(() => setProductDrawerProductId(null), drawerAnimationMs);
+  }
+
+  function openClaimEditor(claimId: string) {
+    setClaimDrawerClaimId(claimId);
+    setClaimDrawerOpen(false);
+    window.setTimeout(() => setClaimDrawerOpen(true), 0);
+  }
+
+  function closeClaimEditor() {
+    setClaimDrawerOpen(false);
+    window.setTimeout(() => setClaimDrawerClaimId(null), drawerAnimationMs);
   }
 
   if (tab === "Brand Basics") {
@@ -4619,6 +4970,151 @@ function RepoPanel({
             section="Channel SEO"
             status={channelSeoStatus}
             value={activeChannelSeoField.value}
+          />
+        ) : null}
+      </section>
+    );
+  }
+
+  if (tab === "Products") {
+    const products = getRepoProducts(repo);
+    const activeProduct = productDrawerProductId ? products.find((product) => product.id === productDrawerProductId) ?? null : null;
+
+    return (
+      <section className="repo-panel">
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title="Products"
+        />
+        <div className="section-actions-row">
+          <button
+            className="secondary"
+            onClick={() => {
+              const productId = onAddProduct();
+              openProductEditor(productId);
+            }}
+            type="button"
+          >
+            Add product
+          </button>
+        </div>
+        {products.length ? (
+          <div className="structured-card-grid">
+            {products.map((product) => (
+              <button className="structured-card" key={product.id} onClick={() => openProductEditor(product.id)} type="button">
+                <span className="status-pill">{product.status || "No status"}</span>
+                <strong>{product.name || "Untitled product"}</strong>
+                {product.description ? <p>{product.description}</p> : <p className="muted-text">No short description yet.</p>}
+                <dl>
+                  <div>
+                    <dt>Capabilities</dt>
+                    <dd>{product.keyCapabilities.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Use cases</dt>
+                    <dd>{product.useCases.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Limitations</dt>
+                    <dd>{product.limitations.length}</dd>
+                  </div>
+                </dl>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <p className="autosave-status">{productsStatus}</p>
+        {activeProduct ? (
+          <ProductDetailsDrawer
+            isOpen={productDrawerOpen}
+            onClose={closeProductEditor}
+            onDelete={(productId) => {
+              onDeleteProduct(productId);
+              closeProductEditor();
+            }}
+            onUpdate={onUpdateProductField}
+            product={activeProduct}
+          />
+        ) : null}
+      </section>
+    );
+  }
+
+  if (tab === "Approved Claims") {
+    const claims = getRepoApprovedClaims(repo);
+    const activeClaim = claimDrawerClaimId ? claims.find((claim) => claim.id === claimDrawerClaimId) ?? null : null;
+    const claimsByStatus = (["Approved", "Draft", "Expired", "Do not use"] as ApprovedClaim["status"][]).map((status) => ({
+      status,
+      claims: claims.filter((claim) => claim.status === status),
+    }));
+
+    return (
+      <section className="repo-panel">
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title="Approved Claims"
+        />
+        <div className="section-actions-row">
+          <button
+            className="secondary"
+            onClick={() => {
+              const claimId = onAddApprovedClaim("Approved");
+              openClaimEditor(claimId);
+            }}
+            type="button"
+          >
+            Add claim
+          </button>
+          <button
+            className="secondary"
+            onClick={() => {
+              const claimId = onAddApprovedClaim("Do not use");
+              openClaimEditor(claimId);
+            }}
+            type="button"
+          >
+            Add do-not-use claim
+          </button>
+        </div>
+        {claims.length ? (
+          <div className="claim-status-groups">
+            {claimsByStatus.map(({ status, claims: statusClaims }) =>
+              statusClaims.length ? (
+                <section className="claim-status-group" key={status}>
+                  <h3>{status}</h3>
+                  <div className="claim-list">
+                    {statusClaims.map((claim) => (
+                      <button className="claim-card" key={claim.id} onClick={() => openClaimEditor(claim.id)} type="button">
+                        <strong>{claim.claim || "Untitled claim"}</strong>
+                        {claim.appliesTo ? <span>{claim.appliesTo}</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null,
+            )}
+          </div>
+        ) : null}
+        <p className="autosave-status">{approvedClaimsStatus}</p>
+        {activeClaim ? (
+          <ApprovedClaimDetailsDrawer
+            claim={activeClaim}
+            isOpen={claimDrawerOpen}
+            onClose={closeClaimEditor}
+            onDelete={(claimId) => {
+              onDeleteApprovedClaim(claimId);
+              closeClaimEditor();
+            }}
+            onUpdate={onUpdateApprovedClaimField}
+            products={getRepoProducts(repo)}
           />
         ) : null}
       </section>
@@ -5198,6 +5694,177 @@ function SectionFieldDrawer({
             <input onChange={(event) => onUpdate(field, event.target.value)} value={value} />
           )}
           <p className="autosave-status">{status}</p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ProductDetailsDrawer({
+  isOpen,
+  onClose,
+  onDelete,
+  onUpdate,
+  product,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onDelete: (productId: string) => void;
+  onUpdate: (productId: string, field: ProductField, value: string) => void;
+  product: Product;
+}) {
+  return (
+    <div className={`drawer-layer ${isOpen ? "open" : ""}`} role="presentation">
+      <button aria-label="Close product editor" className="drawer-backdrop" onClick={onClose} type="button" />
+      <aside aria-label="Edit product" className="markdown-drawer field-edit-drawer structured-detail-drawer">
+        <header>
+          <div>
+            <strong>Products</strong>
+            <h2>{product.name || "Untitled product"}</h2>
+          </div>
+          <button className="secondary" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <div className="structured-detail-body">
+          <label>
+            Product name
+            <input onChange={(event) => onUpdate(product.id, "name", event.target.value)} required value={product.name} />
+          </label>
+          <label>
+            Short description
+            <textarea onChange={(event) => onUpdate(product.id, "description", event.target.value)} value={product.description} />
+          </label>
+          <label>
+            Product status
+            <select onChange={(event) => onUpdate(product.id, "status", event.target.value)} value={product.status ?? ""}>
+              <option value="">No status</option>
+              <option value="Available">Available</option>
+              <option value="Beta">Beta</option>
+              <option value="Coming soon">Coming soon</option>
+              <option value="Discontinued">Discontinued</option>
+            </select>
+          </label>
+          <label>
+            Primary audience
+            <textarea onChange={(event) => onUpdate(product.id, "primaryAudience", event.target.value)} value={product.primaryAudience ?? ""} />
+          </label>
+          <label>
+            Problems solved
+            <textarea onChange={(event) => onUpdate(product.id, "problemsSolved", event.target.value)} value={(product.problemsSolved ?? []).join("\n")} />
+          </label>
+          <label>
+            Key capabilities
+            <textarea onChange={(event) => onUpdate(product.id, "keyCapabilities", event.target.value)} value={(product.keyCapabilities ?? []).join("\n")} />
+          </label>
+          <label>
+            Use cases
+            <textarea onChange={(event) => onUpdate(product.id, "useCases", event.target.value)} value={(product.useCases ?? []).join("\n")} />
+          </label>
+          <label>
+            Differentiators
+            <textarea onChange={(event) => onUpdate(product.id, "differentiators", event.target.value)} value={(product.differentiators ?? []).join("\n")} />
+          </label>
+          <label>
+            Limitations / Not supported
+            <textarea onChange={(event) => onUpdate(product.id, "limitations", event.target.value)} value={(product.limitations ?? []).join("\n")} />
+          </label>
+          <label>
+            Product URL
+            <input onChange={(event) => onUpdate(product.id, "productUrl", event.target.value)} value={product.productUrl ?? ""} />
+          </label>
+          <label>
+            Supporting asset IDs
+            <textarea onChange={(event) => onUpdate(product.id, "supportingAssetIds", event.target.value)} value={(product.supportingAssetIds ?? []).join("\n")} />
+          </label>
+          <button className="danger-secondary" onClick={() => onDelete(product.id)} type="button">
+            Delete product
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ApprovedClaimDetailsDrawer({
+  claim,
+  isOpen,
+  onClose,
+  onDelete,
+  onUpdate,
+  products,
+}: {
+  claim: ApprovedClaim;
+  isOpen: boolean;
+  onClose: () => void;
+  onDelete: (claimId: string) => void;
+  onUpdate: (claimId: string, field: ApprovedClaimField, value: string) => void;
+  products: Product[];
+}) {
+  return (
+    <div className={`drawer-layer ${isOpen ? "open" : ""}`} role="presentation">
+      <button aria-label="Close claim editor" className="drawer-backdrop" onClick={onClose} type="button" />
+      <aside aria-label="Edit approved claim" className="markdown-drawer field-edit-drawer structured-detail-drawer">
+        <header>
+          <div>
+            <strong>Approved Claims</strong>
+            <h2>{claim.status}</h2>
+          </div>
+          <button className="secondary" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <div className="structured-detail-body">
+          <label>
+            Claim
+            <textarea onChange={(event) => onUpdate(claim.id, "claim", event.target.value)} required value={claim.claim} />
+          </label>
+          <label>
+            Status
+            <select onChange={(event) => onUpdate(claim.id, "status", event.target.value)} value={claim.status}>
+              <option value="Approved">Approved</option>
+              <option value="Draft">Draft</option>
+              <option value="Expired">Expired</option>
+              <option value="Do not use">Do not use</option>
+            </select>
+          </label>
+          <label>
+            Applies to
+            <select onChange={(event) => onUpdate(claim.id, "appliesTo", event.target.value)} value={claim.appliesTo ?? ""}>
+              <option value="">Not specified</option>
+              <option value="Company">Company</option>
+              <option value="Brand">Brand</option>
+              <option value="Specific product">Specific product</option>
+            </select>
+          </label>
+          {claim.appliesTo === "Specific product" ? (
+            <label>
+              Product
+              <select onChange={(event) => onUpdate(claim.id, "productId", event.target.value)} value={claim.productId ?? ""}>
+                <option value="">Select product</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name || "Untitled product"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <label>
+            Evidence / source
+            <textarea onChange={(event) => onUpdate(claim.id, "evidence", event.target.value)} value={claim.evidence} />
+          </label>
+          <label>
+            Notes / usage guidance
+            <textarea onChange={(event) => onUpdate(claim.id, "notes", event.target.value)} value={claim.notes} />
+          </label>
+          <label>
+            Expiration / review date
+            <input onChange={(event) => onUpdate(claim.id, "reviewDate", event.target.value)} value={claim.reviewDate} />
+          </label>
+          <button className="danger-secondary" onClick={() => onDelete(claim.id)} type="button">
+            Delete claim
+          </button>
         </div>
       </aside>
     </div>

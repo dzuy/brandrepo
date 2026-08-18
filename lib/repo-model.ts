@@ -7,7 +7,9 @@ export type RepoKind =
   | "Typography"
   | "Messaging"
   | "Audiences"
-  | "Channel SEO";
+  | "Channel SEO"
+  | "Products"
+  | "Approved Claims";
 
 export type Source = {
   id: string;
@@ -29,10 +31,31 @@ export type Product = {
   id: string;
   name: string;
   description: string;
+  status?: "Available" | "Beta" | "Coming soon" | "Discontinued" | "";
+  primaryAudience?: string;
+  problemsSolved?: string[];
+  keyCapabilities?: string[];
+  useCases?: string[];
+  differentiators?: string[];
+  limitations?: string[];
+  productUrl?: string;
+  supportingAssetIds?: string[];
   features: string[];
   benefits: string[];
   pricing: string;
   positioning: string;
+  sources: Source[];
+};
+
+export type ApprovedClaim = {
+  id: string;
+  claim: string;
+  status: "Approved" | "Draft" | "Expired" | "Do not use";
+  appliesTo: "Company" | "Brand" | "Specific product" | "";
+  productId?: string;
+  evidence: string;
+  notes: string;
+  reviewDate: string;
   sources: Source[];
 };
 
@@ -136,6 +159,7 @@ export type RepoState = {
   };
   brand: Brand;
   products: Product[];
+  approvedClaims: ApprovedClaim[];
   audiences: Audience[];
   messaging: Messaging[];
   campaigns: Campaign[];
@@ -191,6 +215,8 @@ export const repoTabs: RepoKind[] = [
   "Messaging",
   "Audiences",
   "Channel SEO",
+  "Products",
+  "Approved Claims",
 ];
 
 export const initialRepo: RepoState = {
@@ -209,6 +235,7 @@ export const initialRepo: RepoState = {
     sources: [],
   },
   products: [],
+  approvedClaims: [],
   audiences: [],
   messaging: [],
   campaigns: [],

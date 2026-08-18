@@ -2,9 +2,11 @@ import {
   classifyRepoAsset,
   generateSectionMarkdown,
   getRepoAssetCounts,
+  getRepoApprovedClaims,
   getRepoAudienceSettings,
   getRepoColors,
   getRepoIdentity,
+  getRepoProducts,
   getRepoTypography,
 } from "./repo-context";
 import { Asset, WorkspaceState, repoTabs } from "./repo-model";
@@ -117,6 +119,10 @@ export function serializeRepoForAI({
   const typography = getRepoTypography(repo);
   const audienceSettings = getRepoAudienceSettings(repo);
   const colors = getRepoColors(repo);
+  const products = getRepoProducts(repo);
+  const claims = getRepoApprovedClaims(repo);
+  const approvedClaims = claims.filter((claim) => claim.status === "Approved");
+  const prohibitedClaims = claims.filter((claim) => claim.status === "Do not use");
   const usefulAssets = repo.assets.filter((asset) => asset.url && !asset.url.startsWith("data:") && usefulAssetKinds(asset));
   const brandName = repo.company.name || workspace.name || "Untitled brand";
   const canonicalUrl = getRepoCanonicalUrl(accountSlug, repoSlug);
@@ -136,6 +142,31 @@ export function serializeRepoForAI({
     messaging?.keyMessages.length ? `### Key messages\n${markdownList(messaging.keyMessages)}` : "",
     messaging?.proofPoints.length ? `### Key differentiators\n${markdownList(messaging.proofPoints)}` : "",
     hasText(messaging?.taglines[0]) ? `### Tagline\n${messaging?.taglines[0]}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const productsBody = products
+    .map((product) =>
+      [
+        `### ${product.name || "Untitled product"}`,
+        product.status ? `Status: ${product.status}` : "",
+        product.description ? `Description:\n${product.description}` : "",
+        product.primaryAudience ? `Primary audience:\n${product.primaryAudience}` : "",
+        product.problemsSolved.length ? `Problems solved:\n${markdownList(product.problemsSolved)}` : "",
+        product.keyCapabilities.length ? `Key capabilities:\n${markdownList(product.keyCapabilities)}` : "",
+        product.useCases.length ? `Use cases:\n${markdownList(product.useCases)}` : "",
+        product.differentiators.length ? `Differentiators:\n${markdownList(product.differentiators)}` : "",
+        product.limitations.length ? `Limitations / Not supported:\n${markdownList(product.limitations)}` : "",
+        product.productUrl ? `Product URL: ${product.productUrl}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    )
+    .join("\n\n");
+  const claimsBody = [
+    "Only use factual claims listed as Approved below. Do not invent statistics, capabilities, customers, integrations, pricing, performance claims, rankings, or proof points.",
+    approvedClaims.length ? `### Approved\n${markdownList(approvedClaims.map((claim) => claim.claim))}` : "",
+    prohibitedClaims.length ? `### Do Not Use\n${markdownList(prohibitedClaims.map((claim) => claim.claim))}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -192,11 +223,17 @@ export function serializeRepoForAI({
     `# ${brandName}`,
     `Canonical BrandRepo: ${canonicalUrl}`,
     updatedLine,
+    section(
+      "Instructions for AI",
+      "Use Products as the authoritative source for factual information about what the company offers and what each product can do.\n\nOnly make factual marketing claims supported by Approved Claims or other explicit factual information in this repository.\n\nDo not invent product capabilities, integrations, statistics, customers, pricing, results, certifications, rankings, or other proof points.\n\nIf the user's request requires information that is not available in the repository, ask for the missing information rather than inventing it.",
+    ),
     section("Brand Basics", brandBasics),
+    section("Products", productsBody),
+    section("Audiences", audiencesBody),
     section("Messaging", messagingBody),
+    section("Approved Claims", claimsBody),
     section("Voice & Tone", voiceBody),
     section("Visual Identity", identityBody),
-    section("Audiences", audiencesBody),
     section("Useful Assets", assetBody),
   ].filter(Boolean);
 

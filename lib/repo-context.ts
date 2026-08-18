@@ -1,5 +1,7 @@
 import {
+  ApprovedClaim,
   Asset,
+  Product,
   RepoKind,
   RepoState,
   WorkspaceState,
@@ -33,6 +35,51 @@ export type RepoContextSection = {
   markdown: string;
   structuredData: unknown;
 };
+
+export function getRepoProducts(repo: RepoState): Product[] {
+  return (repo.products ?? []).map((product) => ({
+    ...product,
+    status: product.status ?? "",
+    primaryAudience: product.primaryAudience ?? "",
+    problemsSolved: product.problemsSolved ?? [],
+    keyCapabilities: product.keyCapabilities ?? product.features ?? [],
+    useCases: product.useCases ?? product.benefits ?? [],
+    differentiators: product.differentiators ?? (product.positioning ? [product.positioning] : []),
+    limitations: product.limitations ?? [],
+    productUrl: product.productUrl ?? "",
+    supportingAssetIds: product.supportingAssetIds ?? [],
+    features: product.features ?? [],
+    benefits: product.benefits ?? [],
+    pricing: product.pricing ?? "",
+    positioning: product.positioning ?? "",
+    sources: product.sources ?? [],
+  }));
+}
+
+export function getRepoApprovedClaims(repo: RepoState): ApprovedClaim[] {
+  const structuredClaims = repo.approvedClaims ?? [];
+  const legacyClaims = (repo.messaging ?? [])
+    .flatMap((message) => message.claims ?? [])
+    .map((claim, index) => ({
+      id: `legacy-claim-${index}-${claim.slice(0, 16)}`,
+      claim,
+      status: "Approved" as const,
+      appliesTo: "Brand" as const,
+      evidence: "",
+      notes: "",
+      reviewDate: "",
+      sources: [],
+    }));
+
+  return [...structuredClaims, ...legacyClaims].map((claim) => ({
+    ...claim,
+    appliesTo: claim.appliesTo ?? "",
+    evidence: claim.evidence ?? "",
+    notes: claim.notes ?? "",
+    reviewDate: claim.reviewDate ?? "",
+    sources: claim.sources ?? [],
+  }));
+}
 
 export type RepoContext = {
   repo: {
@@ -440,6 +487,67 @@ ${markdownLine(channelSeo.hashtags)}
 ${markdownLine(channelSeo.successMetrics)}
 `;
   }
+
+  if (tab === "Products") {
+    const products = getRepoProducts(repo);
+
+    return `# Products
+
+${
+  products.length
+    ? products
+        .map((product) =>
+          [
+            `## ${markdownLine(product.name)}`,
+            product.status ? `Status: ${markdownLine(product.status)}` : "",
+            product.description ? `Description:\n${markdownLine(product.description)}` : "",
+            product.primaryAudience ? `Primary audience:\n${markdownLine(product.primaryAudience)}` : "",
+            product.problemsSolved?.length ? `### Problems solved\n${markdownList(product.problemsSolved)}` : "",
+            product.keyCapabilities?.length ? `### Key capabilities\n${markdownList(product.keyCapabilities)}` : "",
+            product.useCases?.length ? `### Use cases\n${markdownList(product.useCases)}` : "",
+            product.differentiators?.length ? `### Differentiators\n${markdownList(product.differentiators)}` : "",
+            product.limitations?.length ? `### Limitations / Not supported\n${markdownList(product.limitations)}` : "",
+            product.productUrl ? `Product URL: ${markdownLine(product.productUrl)}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        )
+        .join("\n\n")
+    : "_No products yet._"
+}
+
+## Notes
+${markdownNotes(notes)}
+`;
+  }
+
+  if (tab === "Approved Claims") {
+    const claims = getRepoApprovedClaims(repo);
+    const approvedClaims = claims.filter((claim) => claim.status === "Approved");
+    const draftClaims = claims.filter((claim) => claim.status === "Draft");
+    const expiredClaims = claims.filter((claim) => claim.status === "Expired");
+    const prohibitedClaims = claims.filter((claim) => claim.status === "Do not use");
+
+    return `# Approved Claims
+
+Only use factual claims listed as Approved. Do not invent statistics, capabilities, customers, integrations, pricing, performance claims, rankings, or proof points.
+
+## Approved
+${markdownList(approvedClaims.map((claim) => claim.claim))}
+
+## Draft
+${markdownList(draftClaims.map((claim) => claim.claim))}
+
+## Expired
+${markdownList(expiredClaims.map((claim) => claim.claim))}
+
+## Do Not Use
+${markdownList(prohibitedClaims.map((claim) => claim.claim))}
+
+## Notes
+${markdownNotes(notes)}
+`;
+  }
 }
 
 function structuredDataForSection(repo: RepoState, tab: RepoKind) {
@@ -476,6 +584,8 @@ function structuredDataForSection(repo: RepoState, tab: RepoKind) {
   }
   if (tab === "Audiences") return getRepoAudienceSettings(repo);
   if (tab === "Channel SEO") return getRepoChannelSeo(repo);
+  if (tab === "Products") return { products: getRepoProducts(repo) };
+  if (tab === "Approved Claims") return { claims: getRepoApprovedClaims(repo) };
   return {
     assets: visualAssetsForSection(repo, tab).map((asset) => normalizeRepoContextAsset(asset)),
     notes: getRepoSectionNotes(repo, tab),
@@ -574,6 +684,26 @@ export function getRepoSectionCompleteness(repo: RepoState, tab: RepoKind) {
       hasText(channelSeo.seoPlanning),
       hasText(channelSeo.keywords),
       hasText(channelSeo.successMetrics),
+    ]);
+  }
+
+  if (tab === "Products") {
+    const products = getRepoProducts(repo);
+
+    return countList([
+      products.length > 0,
+      products.some((product) => hasText(product.description)),
+      products.some((product) => product.keyCapabilities.length > 0),
+      products.some((product) => product.useCases.length > 0),
+      products.some((product) => product.limitations.length > 0),
+    ]);
+  }
+
+  if (tab === "Approved Claims") {
+    const claims = getRepoApprovedClaims(repo);
+    return countList([
+      claims.some((claim) => claim.claim.trim() && claim.status === "Approved"),
+      claims.some((claim) => claim.claim.trim() && claim.status === "Do not use"),
     ]);
   }
 

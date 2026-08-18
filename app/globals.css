@@ -1223,6 +1223,116 @@ button.read-field-edit:focus-visible {
   margin: 0;
 }
 
+.section-actions-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.structured-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.structured-card,
+.claim-card {
+  align-items: start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  padding: 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.structured-card:hover:not(:disabled),
+.structured-card:focus-visible,
+.claim-card:hover:not(:disabled),
+.claim-card:focus-visible {
+  background: color-mix(in srgb, var(--panel) 94%, var(--ink) 6%);
+  border-color: color-mix(in srgb, var(--ink) 14%, var(--line));
+  box-shadow: var(--shadow-sm);
+  transform: none;
+}
+
+.structured-card strong,
+.claim-card strong {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.structured-card p {
+  color: var(--muted-strong);
+  margin: 0;
+}
+
+.structured-card dl {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 4px 0 0;
+}
+
+.structured-card dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.structured-card dd {
+  color: var(--ink);
+  font-weight: 700;
+  margin: 2px 0 0;
+}
+
+.status-pill {
+  align-self: start;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-self: start;
+  padding: 4px 9px;
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.claim-status-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.claim-status-group {
+  display: grid;
+  gap: 10px;
+}
+
+.claim-status-group h3 {
+  color: var(--ink);
+  font-size: 1rem;
+  margin: 0;
+}
+
+.claim-list {
+  display: grid;
+  gap: 10px;
+}
+
+.claim-card span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .field-edit-body {
   display: grid;
   gap: 12px;
@@ -1233,6 +1343,27 @@ button.read-field-edit:focus-visible {
 
 .field-edit-body textarea {
   min-height: 420px;
+}
+
+.structured-detail-drawer {
+  max-width: 640px;
+  width: min(640px, 94vw);
+}
+
+.structured-detail-body {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.structured-detail-body textarea {
+  min-height: 110px;
+}
+
+.structured-detail-body label:first-child textarea {
+  min-height: 80px;
 }
 
 .identity-editor {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { classifyRepoAsset } from "../../../lib/repo-context";
+import { classifyRepoAsset, getRepoApprovedClaims, getRepoProducts } from "../../../lib/repo-context";
 import { loadPublicRepo } from "../../../lib/public-repo";
 import {
   getAiSharePrompt,
@@ -141,6 +141,8 @@ export default async function PublicRepoPage({ params }: { params: Promise<Publi
   const primaryLogo = snapshot.logoAssets[0];
   const messaging = repo.messaging[0];
   const audience = repo.audiences[0];
+  const products = getRepoProducts(repo);
+  const approvedClaims = getRepoApprovedClaims(repo).filter((claim) => claim.status === "Approved" && claim.claim.trim());
   const shortDescription = firstText(repo.company.description, messaging?.taglines[0]);
   const about = firstText(repo.brand.description, repo.company.description);
   const primaryValue = firstText(messaging?.valueProps[0], messaging?.positioning);
@@ -244,6 +246,35 @@ export default async function PublicRepoPage({ params }: { params: Promise<Publi
         </section>
       ) : null}
 
+      {products.length ? (
+        <section className="public-section" id="products">
+          <div className="public-section-heading">
+            <p className="eyebrow">Products</p>
+            <h2>What this company offers</h2>
+            <a href="#products">View Products →</a>
+          </div>
+          <div className="public-card-grid">
+            {products.map((product) => (
+              <article key={product.id}>
+                <strong>{product.name || "Untitled product"}</strong>
+                {product.status ? <small>{product.status}</small> : null}
+                {product.description ? <SectionText text={product.description} /> : null}
+                {product.keyCapabilities.length ? (
+                  <>
+                    <strong>Key capabilities</strong>
+                    <ul>
+                      {product.keyCapabilities.slice(0, 5).map((capability) => (
+                        <li key={capability}>{capability}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {primaryValue || messaging?.keyMessages.length || messaging?.proofPoints.length || messaging?.taglines.length ? (
         <section className="public-section" id="messaging">
           <div className="public-section-heading">
@@ -284,6 +315,26 @@ export default async function PublicRepoPage({ params }: { params: Promise<Publi
                 <p>{messaging.taglines[0]}</p>
               </article>
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {approvedClaims.length ? (
+        <section className="public-section" id="approved-claims">
+          <div className="public-section-heading">
+            <p className="eyebrow">Approved facts & claims</p>
+            <h2>What this brand can say</h2>
+            <a href="#approved-claims">View Approved Claims →</a>
+          </div>
+          <div className="public-card-grid">
+            <article>
+              <strong>Approved</strong>
+              <ul>
+                {approvedClaims.slice(0, 12).map((claim) => (
+                  <li key={claim.id}>{claim.claim}</li>
+                ))}
+              </ul>
+            </article>
           </div>
         </section>
       ) : null}
