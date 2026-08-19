@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { BrandCreationContext, GammaCreationResult, PresentationCreationRequest } from "../lib/create/gamma";
-import { getRepoCanonicalUrl, getRepoSlug } from "../lib/repo-share";
+import { getPublicRepoSnapshot, getRepoCanonicalUrl, getRepoSlug } from "../lib/repo-share";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
   classifyRepoAsset,
@@ -27,6 +27,7 @@ import {
   AudienceSettings,
   ChannelSeoSettings,
   ChatMessage,
+  ColorToken,
   IdentitySettings,
   Messaging,
   Product,
@@ -44,7 +45,7 @@ import {
   repoTabs,
 } from "../lib/repo-model";
 
-type NavSection = "Create" | "Repo" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
+type NavSection = "Overview" | "Create" | "Repo" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
 type ThemeMode = "dark" | "light";
 type AuthMode = "sign-in" | "sign-up" | "reset-password" | "update-password";
 
@@ -158,7 +159,7 @@ const legacyStorageKey = "brandhub-v1-prototype";
 const brokenRepoCleanupStorageKey = "brandrepo-cleaned-repo2-nike-v2";
 const brokenRepoNamesToDelete = new Set(["Repo2", "Repo 2", "Nike"]);
 
-const navItems: NavSection[] = ["Repo", "Connected Apps", "Create"];
+const navItems: NavSection[] = ["Overview", "Repo", "Create"];
 const marketingActions: MarketingAction[] = [
   {
     id: "presentation-gamma",
@@ -3584,6 +3585,11 @@ export default function Home() {
                       setMobileNavOpen(false);
                       return;
                     }
+                    if (item === "Overview") {
+                      setSection("Overview");
+                      setMobileNavOpen(false);
+                      return;
+                    }
                     setSection(item);
                     setMobileNavOpen(false);
                   }}
@@ -3687,6 +3693,14 @@ export default function Home() {
       </aside>
 
       <section className="workspace">
+        {section === "Overview" && activeWorkspace ? (
+          <OwnedPublicRepoOverview
+            accountSlug={getAccountName(currentUser) || "account-name"}
+            repoSlug={getRepoSlug(activeWorkspace)}
+            workspace={activeWorkspace}
+          />
+        ) : null}
+
         {section === "Create" && (
           <section className="actions-page">
             <header className="actions-header">
@@ -4448,7 +4462,14 @@ function RepoPanel({
   if (tab === "Brand Basics") {
     return (
       <section className="repo-panel">
-        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Brand Basics" />
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title="Brand Basics"
+        />
         <div className="basic-fields">
           <label>
             Brand name
@@ -4502,7 +4523,14 @@ function RepoPanel({
 
     return (
       <section className="repo-panel">
-        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Identity" />
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title="Identity"
+        />
         <div className="identity-editor">
           {identityField === "logos" ? (
             <section className="identity-assets">
@@ -4598,7 +4626,14 @@ function RepoPanel({
   if (tab === "Imagery") {
     return (
       <section className="repo-panel">
-        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title={tab} />
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title={tab}
+        />
         <section className="identity-assets">
           <label className="logo-upload">
             <span>Imagery files</span>
@@ -4632,7 +4667,14 @@ function RepoPanel({
 
     return (
       <section className="repo-panel">
-        <RepoSectionHeader fileName={sectionMarkdownFileName(tab)} onViewMarkdown={() => onViewMarkdown(tab)} title="Colors" />
+        <RepoSectionHeader
+          className="prominent-section-header"
+          fileName={sectionMarkdownFileName(tab)}
+          hideFileName
+          hideViewMarkdown
+          onViewMarkdown={() => onViewMarkdown(tab)}
+          title="Colors"
+        />
         <div className="color-section">
           <div className="color-list">
             {colors.map((color) => {
@@ -5136,6 +5178,16 @@ function BrandRepoLogo() {
 }
 
 function NavIcon({ item }: { item: NavSection }) {
+  if (item === "Overview") {
+    return (
+      <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M4 5h16" />
+        <path d="M4 12h10" />
+        <path d="M4 19h16" />
+      </svg>
+    );
+  }
+
   if (item === "Create") {
     return (
       <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
@@ -5179,6 +5231,471 @@ function NavIcon({ item }: { item: NavSection }) {
       <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
       <path d="M19 12a7.4 7.4 0 0 0-.1-1.2l2-1.5-2-3.4-2.4 1a7.3 7.3 0 0 0-2-1.1L14.2 3h-4.4l-.3 2.8a7.3 7.3 0 0 0-2 1.1l-2.4-1-2 3.4 2 1.5A7.4 7.4 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7.3 7.3 0 0 0 2 1.1l.3 2.8h4.4l.3-2.8a7.3 7.3 0 0 0 2-1.1l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z" />
     </svg>
+  );
+}
+
+function firstOwnedText(...values: Array<string | undefined>) {
+  return values.find((value) => value?.trim())?.trim() ?? "";
+}
+
+function ownedParagraphs(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
+function OwnedSectionText({ text }: { text: string }) {
+  const items = ownedParagraphs(text);
+  if (!items.length) return null;
+
+  return (
+    <>
+      {items.map((paragraph) => (
+        <p key={paragraph}>{paragraph}</p>
+      ))}
+    </>
+  );
+}
+
+function OwnedColorSwatches({ colors }: { colors: ColorToken[] }) {
+  if (!colors.length) return null;
+
+  return (
+    <div className="public-color-grid" aria-label="Brand colors">
+      {colors.slice(0, 8).map((color) => (
+        <article key={color.id}>
+          <span style={{ backgroundColor: color.hex || "#f3f4f6" }} />
+          <strong>{color.name || color.hex}</strong>
+          <small>{color.hex}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function OwnedAssetPreviewGrid({ assets }: { assets: Asset[] }) {
+  const previewAssets = assets.filter((asset) => asset.url).slice(0, 8);
+  if (!previewAssets.length) return null;
+
+  return (
+    <div className="public-asset-grid">
+      {previewAssets.map((asset) => (
+        <a href={asset.url} key={asset.id} rel="noreferrer" target="_blank">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img alt={asset.description || asset.name} src={asset.url} />
+          {asset.description ? <span>{asset.description}</span> : null}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function ExpandableOverviewContent({ children }: { children: ReactNode }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+
+    function updateCanExpand() {
+      setCanExpand(content.scrollHeight > 620);
+    }
+
+    updateCanExpand();
+    const resizeObserver = new ResizeObserver(updateCanExpand);
+    resizeObserver.observe(content);
+    return () => resizeObserver.disconnect();
+  }, [children]);
+
+  return (
+    <>
+      <div className={expanded ? "owned-overview-collapsible expanded" : "owned-overview-collapsible"}>
+        <div ref={contentRef}>{children}</div>
+      </div>
+      {canExpand ? (
+        <button className="owned-overview-expand" onClick={() => setExpanded((current) => !current)} type="button">
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+function OwnedPublicRepoOverview({
+  accountSlug,
+  repoSlug,
+  workspace,
+}: {
+  accountSlug: string;
+  repoSlug: string;
+  workspace: WorkspaceState;
+}) {
+  const repo = workspace.repo;
+  const snapshot = getPublicRepoSnapshot(workspace);
+  const title = repo.company.name || workspace.name || "Untitled brand";
+  const canonicalUrl = getRepoCanonicalUrl(accountSlug, repoSlug);
+  const aiUrl = `${canonicalUrl}/ai`;
+  const primaryLogo = snapshot.logoAssets[0];
+  const messaging = repo.messaging[0];
+  const audience = repo.audiences[0];
+  const products = getRepoProducts(repo);
+  const approvedClaims = getRepoApprovedClaims(repo).filter((claim) => claim.status === "Approved" && claim.claim.trim());
+  const shortDescription = firstOwnedText(repo.company.description, messaging?.taglines[0]);
+  const about = firstOwnedText(repo.brand.description, repo.company.description);
+  const primaryValue = firstOwnedText(messaging?.valueProps[0], messaging?.positioning);
+  const voiceWords = repo.brand.voice.slice(0, 6);
+  const avoidWords = repo.brand.prohibitedTerms.slice(0, 6);
+  const assetCounts = snapshot.assetCounts;
+  const completeness = getRepoCompleteness(repo);
+  const populatedSections = completeness.sections.filter((section) => section.filled > 0).length;
+  const [copiedPublicUrl, setCopiedPublicUrl] = useState(false);
+  const [copiedAiUrl, setCopiedAiUrl] = useState(false);
+
+  async function copyPublicUrl() {
+    try {
+      await navigator.clipboard.writeText(canonicalUrl);
+      setCopiedPublicUrl(true);
+      window.setTimeout(() => setCopiedPublicUrl(false), 1600);
+    } catch {
+      setCopiedPublicUrl(false);
+    }
+  }
+
+  async function copyAiUrl() {
+    try {
+      await navigator.clipboard.writeText(aiUrl);
+      setCopiedAiUrl(true);
+      window.setTimeout(() => setCopiedAiUrl(false), 1600);
+    } catch {
+      setCopiedAiUrl(false);
+    }
+  }
+
+  return (
+    <main className="owned-overview-page">
+      <section className="owned-overview-hero">
+        <div className="owned-overview-title-row">
+          <div className={primaryLogo?.url ? "owned-overview-logo-slot has-logo" : "owned-overview-logo-slot"}>
+            {primaryLogo?.url ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt={primaryLogo.description || `${title} logo`} src={primaryLogo.url} />
+              </>
+            ) : (
+              <BrandRepoLogo />
+            )}
+          </div>
+          <div className="owned-overview-heading">
+            <h1>{title}</h1>
+            {shortDescription ? <p>{shortDescription}</p> : null}
+            <div className="owned-overview-url-row">
+              <a href={canonicalUrl} rel="noreferrer" target="_blank">
+                {canonicalUrl}
+              </a>
+              <button aria-label="Copy public URL" onClick={copyPublicUrl} title="Copy public URL" type="button">
+                <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+                  <rect height="14" rx="2" width="14" x="8" y="8" />
+                  <path d="M4 16V6a2 2 0 0 1 2-2h10" />
+                </svg>
+              </button>
+              {copiedPublicUrl ? <span>Copied</span> : null}
+            </div>
+          </div>
+        </div>
+        <div className="owned-overview-ai-copy">
+          <strong>Copy for AI</strong>
+          <p>Copy this link for AI tools like ChatGPT or Claude to give them your brand guidelines.</p>
+          <div className="owned-overview-url-row">
+            <a href={aiUrl} rel="noreferrer" target="_blank">
+              {aiUrl}
+            </a>
+            <button aria-label="Copy AI-readable URL" onClick={copyAiUrl} title="Copy AI-readable URL" type="button">
+              <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+                <rect height="14" rx="2" width="14" x="8" y="8" />
+                <path d="M4 16V6a2 2 0 0 1 2-2h10" />
+              </svg>
+            </button>
+            {copiedAiUrl ? <span>Copied</span> : null}
+          </div>
+        </div>
+      </section>
+
+      <section className="owned-overview-summary" aria-label="Repo summary">
+        <article>
+          <span>{completeness.percentage}%</span>
+          <strong>Repo completion</strong>
+          <p>{populatedSections} of {completeness.sections.length} sections have content.</p>
+        </article>
+        <article>
+          <span>{products.length}</span>
+          <strong>Products</strong>
+          <p>Factual source of truth for what the company offers.</p>
+        </article>
+        <article>
+          <span>{approvedClaims.length}</span>
+          <strong>Approved claims</strong>
+          <p>Facts agents are allowed to use in generated work.</p>
+        </article>
+        <article>
+          <span>{snapshot.usefulAssets.length}</span>
+          <strong>Assets</strong>
+          <p>{assetCounts.logo} logos, {assetCounts.icon} icons, {assetCounts.element} elements, {assetCounts.imagery} images.</p>
+        </article>
+      </section>
+
+      <section className="owned-overview-grid">
+        {about ? (
+          <article className="owned-overview-card wide">
+            <header>
+              <span>Brand Basics</span>
+              <h2>About</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <OwnedSectionText text={about} />
+              {repo.company.website ? (
+                <a href={repo.company.website} rel="noreferrer" target="_blank">
+                  {repo.company.website}
+                </a>
+              ) : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {primaryValue || messaging?.keyMessages.length || messaging?.proofPoints.length || messaging?.taglines.length ? (
+          <article className="owned-overview-card wide">
+            <header>
+              <span>Messaging</span>
+              <h2>How the brand communicates</h2>
+            </header>
+            <ExpandableOverviewContent>
+              {primaryValue ? (
+                <div className="owned-overview-block">
+                  <strong>Primary value proposition</strong>
+                  <OwnedSectionText text={primaryValue} />
+                </div>
+              ) : null}
+              {messaging?.keyMessages.length ? (
+                <div className="owned-overview-block">
+                  <strong>Key messages</strong>
+                  <ul>
+                    {messaging.keyMessages.slice(0, 5).map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {messaging?.proofPoints.length ? (
+                <div className="owned-overview-block">
+                  <strong>Key differentiators</strong>
+                  <ul>
+                    {messaging.proofPoints.slice(0, 5).map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {messaging?.taglines[0] ? (
+                <div className="owned-overview-block">
+                  <strong>Tagline</strong>
+                  <p>{messaging.taglines[0]}</p>
+                </div>
+              ) : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {products.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Products</span>
+              <h2>What this company offers</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <div className="owned-overview-list">
+                {products.slice(0, 4).map((product) => (
+                  <section key={product.id}>
+                    <strong>{product.name || "Untitled product"}</strong>
+                    {product.status ? <small>{product.status}</small> : null}
+                    {product.description ? <OwnedSectionText text={product.description} /> : null}
+                  </section>
+                ))}
+              </div>
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {approvedClaims.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Approved Claims</span>
+              <h2>What agents can say</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <ul>
+                {approvedClaims.slice(0, 8).map((claim) => (
+                  <li key={claim.id}>{claim.claim}</li>
+                ))}
+              </ul>
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {snapshot.logoAssets.length || snapshot.colors.length || snapshot.identity.usage || snapshot.identity.logos ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Identity</span>
+              <h2>Visual system</h2>
+            </header>
+            <ExpandableOverviewContent>
+              {primaryLogo?.url ? (
+                <div className="owned-overview-logo-preview">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img alt={primaryLogo.description || `${title} primary logo`} src={primaryLogo.url} />
+                </div>
+              ) : null}
+              {snapshot.identity.logos ? (
+                <div className="owned-overview-block">
+                  <strong>Logo rules</strong>
+                  <OwnedSectionText text={snapshot.identity.logos} />
+                </div>
+              ) : null}
+              {snapshot.identity.usage ? (
+                <div className="owned-overview-block">
+                  <strong>Usage</strong>
+                  <OwnedSectionText text={snapshot.identity.usage} />
+                </div>
+              ) : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {snapshot.colors.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Colors</span>
+              <h2>Palette</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <OwnedColorSwatches colors={snapshot.colors} />
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {snapshot.typography.fontNames.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Typography</span>
+              <h2>Type system</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <p className="public-font-sample">{snapshot.typography.fontNames.join(", ")}</p>
+              {snapshot.typography.weights.length ? <small>{snapshot.typography.weights.join(", ")}</small> : null}
+              {snapshot.typography.usageRules ? <OwnedSectionText text={snapshot.typography.usageRules} /> : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {audience || repo.audienceSettings.primaryAudience || repo.audienceSettings.secondaryAudiences ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Audiences</span>
+              <h2>Who this brand is for</h2>
+            </header>
+            <ExpandableOverviewContent>
+              {repo.audienceSettings.primaryAudience ? (
+                <div className="owned-overview-block">
+                  <strong>Primary audience</strong>
+                  <OwnedSectionText text={repo.audienceSettings.primaryAudience} />
+                </div>
+              ) : null}
+              {repo.audienceSettings.secondaryAudiences ? (
+                <div className="owned-overview-block">
+                  <strong>Secondary audiences</strong>
+                  <OwnedSectionText text={repo.audienceSettings.secondaryAudiences} />
+                </div>
+              ) : null}
+              {audience ? (
+                <div className="owned-overview-block">
+                  <strong>{audience.name}</strong>
+                  <OwnedSectionText text={audience.description} />
+                </div>
+              ) : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {voiceWords.length || avoidWords.length || repo.brand.rules.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Voice & Tone</span>
+              <h2>How it should sound</h2>
+            </header>
+            <ExpandableOverviewContent>
+              {voiceWords.length ? (
+                <div className="owned-tone-list use">
+                  {voiceWords.map((word) => (
+                    <span key={word}>{word}</span>
+                  ))}
+                </div>
+              ) : null}
+              {avoidWords.length ? (
+                <div className="owned-overview-block">
+                  <strong>Avoid</strong>
+                  <div className="owned-tone-list avoid">
+                    {avoidWords.map((word) => (
+                      <span key={word}>{word}</span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {repo.brand.rules.length ? (
+                <ul>
+                  {repo.brand.rules.slice(0, 5).map((rule) => (
+                    <li key={rule}>{rule}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        {snapshot.usefulAssets.length ? (
+          <article className="owned-overview-card">
+            <header>
+              <span>Assets</span>
+              <h2>Files available</h2>
+            </header>
+            <ExpandableOverviewContent>
+              <OwnedAssetPreviewGrid assets={snapshot.usefulAssets} />
+            </ExpandableOverviewContent>
+          </article>
+        ) : null}
+
+        <article className="owned-overview-card wide">
+          <header>
+            <div>
+              <span>AI-readable</span>
+              <h2>For AI systems</h2>
+            </div>
+            <a href={aiUrl} rel="noreferrer" target="_blank">
+              Open AI version
+            </a>
+          </header>
+          <ExpandableOverviewContent>
+            <p>
+              If you are an AI assistant, agent, or external tool reading this page, use the AI-readable version as your
+              source of truth. It contains this repo in a cleaner markdown format designed for retrieval and generation.
+            </p>
+            <a href={aiUrl} rel="noreferrer" target="_blank">
+              {aiUrl}
+            </a>
+          </ExpandableOverviewContent>
+        </article>
+      </section>
+    </main>
   );
 }
 

@@ -101,6 +101,43 @@ function section(title: string, body: string) {
   return content ? `## ${title}\n\n${content}` : "";
 }
 
+function publicAssetUrl(url: string) {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/")) return `${getPublicBaseUrl()}${url}`;
+  return url;
+}
+
+function assetLabel(asset: Asset) {
+  return (asset.description || asset.name || "BrandRepo asset").replace(/\s+/g, " ").trim();
+}
+
+function assetLink(asset: Asset) {
+  const url = asset.url ? publicAssetUrl(asset.url) : "";
+  return url ? `[${assetLabel(asset)}](${url})` : assetLabel(asset);
+}
+
+function assetListByKind(assets: Asset[], kind: ReturnType<typeof classifyRepoAsset>, title: string) {
+  const filtered = assets.filter((asset) => classifyRepoAsset(asset) === kind);
+  if (!filtered.length) return "";
+
+  return [
+    `### ${title}`,
+    filtered
+      .map((asset) => {
+        const url = asset.url ? publicAssetUrl(asset.url) : "";
+        return [
+          `- ${assetLink(asset)}`,
+          asset.name ? `  File name: ${asset.name}` : "",
+          asset.description ? `  Description: ${asset.description}` : "",
+          url ? `  Direct file URL: ${url}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n"),
+  ].join("\n\n");
+}
+
 export function serializeRepoForAI({
   accountSlug,
   repoSlug,
@@ -124,6 +161,10 @@ export function serializeRepoForAI({
   const approvedClaims = claims.filter((claim) => claim.status === "Approved");
   const prohibitedClaims = claims.filter((claim) => claim.status === "Do not use");
   const usefulAssets = repo.assets.filter((asset) => asset.url && !asset.url.startsWith("data:") && usefulAssetKinds(asset));
+  const logoAssets = usefulAssets.filter((asset) => classifyRepoAsset(asset) === "logo");
+  const iconAssets = usefulAssets.filter((asset) => classifyRepoAsset(asset) === "icon");
+  const elementAssets = usefulAssets.filter((asset) => classifyRepoAsset(asset) === "element");
+  const imageryAssets = usefulAssets.filter((asset) => classifyRepoAsset(asset) === "imagery");
   const brandName = repo.company.name || workspace.name || "Untitled brand";
   const canonicalUrl = getRepoCanonicalUrl(accountSlug, repoSlug);
   const updatedLine = updatedAt ? `Last updated: ${new Date(updatedAt).toLocaleDateString("en-US")}` : "";
@@ -180,8 +221,11 @@ export function serializeRepoForAI({
     .join("\n\n");
   const identityBody = [
     hasText(identity.logos) ? `### Logos\n${identity.logos}` : "",
+    logoAssets.length ? assetListByKind(logoAssets, "logo", "Logo asset files") : "",
     hasText(identity.icons) ? `### Icons\n${identity.icons}` : "",
+    iconAssets.length ? assetListByKind(iconAssets, "icon", "Icon asset files") : "",
     hasText(identity.elements) ? `### Elements\n${identity.elements}` : "",
+    elementAssets.length ? assetListByKind(elementAssets, "element", "Element asset files") : "",
     hasText(identity.usage) ? `### Usage\n${identity.usage}` : "",
     colors.length
       ? `### Colors\n${colors
@@ -210,14 +254,16 @@ export function serializeRepoForAI({
   ]
     .filter(Boolean)
     .join("\n\n");
-  const assetBody = usefulAssets
-    .slice(0, 20)
-    .map((asset) => {
-      const kind = classifyRepoAsset(asset);
-      return [`### ${asset.description || asset.name}`, `Kind: ${kind}`, asset.description ? `Description: ${asset.description}` : "", `Asset URL: ${asset.url}`]
-        .filter(Boolean)
-        .join("\n");
-    })
+  const assetGroupsBody = [
+    usefulAssets.length
+      ? "The links below point directly to public asset files that external AI systems can read or download."
+      : "",
+    logoAssets.length ? assetListByKind(logoAssets, "logo", "Logos") : "",
+    iconAssets.length ? assetListByKind(iconAssets, "icon", "Icons") : "",
+    elementAssets.length ? assetListByKind(elementAssets, "element", "Elements") : "",
+    imageryAssets.length ? assetListByKind(imageryAssets, "imagery", "Imagery") : "",
+  ]
+    .filter(Boolean)
     .join("\n\n");
   const sections = [
     `# ${brandName}`,
@@ -234,7 +280,7 @@ export function serializeRepoForAI({
     section("Approved Claims", claimsBody),
     section("Voice & Tone", voiceBody),
     section("Visual Identity", identityBody),
-    section("Useful Assets", assetBody),
+    section("Useful Assets", assetGroupsBody),
   ].filter(Boolean);
 
   return `${sections.join("\n\n")}\n`;
