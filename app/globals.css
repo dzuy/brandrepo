@@ -776,6 +776,60 @@ button.auth-oauth-button:focus-visible {
 .admin-page {
   display: grid;
   gap: 22px;
+  margin: 0 auto;
+  max-width: 1180px;
+  width: 100%;
+}
+
+.admin-hero {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.admin-hero h1 {
+  font-size: clamp(2.35rem, 5vw, 4rem);
+  line-height: 0.95;
+  margin: 0;
+}
+
+.admin-hero p {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+  margin: 14px 0 0;
+  max-width: 660px;
+}
+
+.admin-refresh {
+  flex: 0 0 auto;
+}
+
+.admin-alert {
+  align-items: center;
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-radius: var(--radius);
+  color: var(--danger);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.admin-alert strong {
+  color: var(--ink);
+}
+
+.admin-alert span {
+  color: var(--danger);
+}
+
+.admin-success {
+  color: var(--success);
+  font-weight: 700;
+  margin: -8px 0 0;
 }
 
 .admin-grid {
@@ -787,8 +841,31 @@ button.auth-oauth-button:focus-visible {
 .admin-card {
   align-content: start;
   display: grid;
-  gap: 18px;
+  gap: 22px;
+  min-height: 320px;
   padding: 24px;
+}
+
+.admin-card-header {
+  align-items: flex-start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.admin-card-header > span {
+  align-items: center;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted-strong);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  width: 34px;
 }
 
 .admin-card h2,
@@ -797,11 +874,31 @@ button.auth-oauth-button:focus-visible {
   margin: 0;
 }
 
+.admin-card h2 {
+  font-size: 1.35rem;
+}
+
 .admin-card p:not(.eyebrow),
+.admin-account-list .section-heading p,
 .admin-account-row p {
   color: var(--muted);
   line-height: 1.5;
   margin: 8px 0 0;
+}
+
+.admin-form-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-card-actions {
+  align-self: end;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.admin-card-actions button {
+  min-width: 0;
 }
 
 .admin-account-list {
@@ -4363,6 +4460,14 @@ button.asset-card:focus-visible {
 
   .field-edit-body textarea {
     min-height: min(420px, 58dvh);
+  }
+
+  .admin-hero {
+    display: grid;
+  }
+
+  .admin-refresh {
+    justify-self: start;
   }
 
   .sidebar nav,

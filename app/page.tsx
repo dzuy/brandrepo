@@ -4150,81 +4150,98 @@ export default function Home() {
 
         {section === "Admin" && isPlatformAdmin(currentUser) ? (
           <section className="admin-page">
-            <header className="topbar">
+            <header className="admin-hero">
               <div>
-                <p>Platform admin</p>
                 <h1>Admin</h1>
+                <p>Create customer accounts, prepare their repos, and invite their team when the setup is ready.</p>
               </div>
-              <button className="secondary" disabled={adminStatus === "loading"} onClick={loadAdminAccounts} type="button">
+              <button className="secondary admin-refresh" disabled={adminStatus === "loading"} onClick={loadAdminAccounts} type="button">
                 {adminStatus === "loading" ? "Loading..." : "Refresh"}
               </button>
             </header>
-            {adminError ? <p className="import-error">{adminError}</p> : null}
-            {adminStatus === "success" ? <p className="success-text">Done.</p> : null}
+            {adminError ? (
+              <aside className="admin-alert" role="status">
+                <strong>Admin setup needed</strong>
+                <span>{adminError}</span>
+              </aside>
+            ) : null}
+            {adminStatus === "success" ? <p className="admin-success">Done.</p> : null}
             <section className="admin-grid">
               <form className="admin-card" onSubmit={createCustomerAccount}>
-                <div>
-                  <p className="eyebrow">Customer account</p>
-                  <h2>Create account and repo</h2>
-                  <p>Create the customer org and a starter repo you can fill in before inviting them.</p>
+                <div className="admin-card-header">
+                  <span>01</span>
+                  <div>
+                    <p className="eyebrow">Customer account</p>
+                    <h2>Create account and repo</h2>
+                    <p>Create the customer org and a starter repo you can fill in before inviting them.</p>
+                  </div>
                 </div>
-                <label>
-                  Account name
-                  <input
-                    onChange={(event) => setAdminAccountName(event.target.value)}
-                    placeholder="Acme"
-                    required
-                    value={adminAccountName}
-                  />
-                </label>
-                <p className="form-note">
-                  The public account slug will be generated from this name.
-                </p>
-                <button disabled={adminStatus === "creating"} type="submit">
-                  {adminStatus === "creating" ? "Creating..." : "Create account"}
-                </button>
+                <div className="admin-form-fields">
+                  <label>
+                    Account name
+                    <input
+                      onChange={(event) => setAdminAccountName(event.target.value)}
+                      placeholder="Acme"
+                      required
+                      value={adminAccountName}
+                    />
+                    <span className="form-note">The public account slug is generated from this name.</span>
+                  </label>
+                </div>
+                <div className="admin-card-actions">
+                  <button disabled={adminStatus === "creating"} type="submit">
+                    {adminStatus === "creating" ? "Creating..." : "Create account"}
+                  </button>
+                </div>
               </form>
               <form className="admin-card" onSubmit={inviteCustomerAdmin}>
-                <div>
-                  <p className="eyebrow">Customer invite</p>
-                  <h2>Invite customer admin</h2>
-                  <p>Invite a customer into their account. They can edit every repo in that account.</p>
+                <div className="admin-card-header">
+                  <span>02</span>
+                  <div>
+                    <p className="eyebrow">Customer invite</p>
+                    <h2>Invite customer admin</h2>
+                    <p>Invite the customer after the repo is ready. They can edit every repo in their account.</p>
+                  </div>
                 </div>
-                <label>
-                  Account
-                  <select
-                    onChange={(event) => setAdminInviteAccountId(event.target.value)}
-                    required
-                    value={adminInviteAccountId}
-                  >
-                    <option value="">Select account</option>
-                    {adminAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Email
-                  <input
-                    onChange={(event) => setAdminInviteEmail(event.target.value)}
-                    placeholder="customer@example.com"
-                    required
-                    type="email"
-                    value={adminInviteEmail}
-                  />
-                </label>
-                <button disabled={adminStatus === "inviting"} type="submit">
-                  {adminStatus === "inviting" ? "Sending..." : "Send invite"}
-                </button>
+                <div className="admin-form-fields">
+                  <label>
+                    Account
+                    <select
+                      onChange={(event) => setAdminInviteAccountId(event.target.value)}
+                      required
+                      value={adminInviteAccountId}
+                    >
+                      <option value="">Select account</option>
+                      {adminAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Email
+                    <input
+                      onChange={(event) => setAdminInviteEmail(event.target.value)}
+                      placeholder="customer@example.com"
+                      required
+                      type="email"
+                      value={adminInviteEmail}
+                    />
+                  </label>
+                </div>
+                <div className="admin-card-actions">
+                  <button disabled={adminStatus === "inviting"} type="submit">
+                    {adminStatus === "inviting" ? "Sending..." : "Send invite"}
+                  </button>
+                </div>
               </form>
             </section>
             <section className="admin-account-list">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">Accounts</p>
                   <h2>Customer accounts</h2>
+                  <p>Accounts you manage as platform admin.</p>
                 </div>
               </div>
               {adminAccounts.length ? (
