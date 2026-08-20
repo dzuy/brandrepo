@@ -101,6 +101,29 @@ function section(title: string, body: string) {
   return content ? `## ${title}\n\n${content}` : "";
 }
 
+function aiInstructions(brandName: string) {
+  return `# AI INSTRUCTIONS
+
+This repository is the authoritative source of truth for ${brandName}.
+
+When creating ${brandName} content:
+
+1. MUST use approved logos from Assets.
+2. MUST use the defined color palette.
+3. MUST follow Typography rules.
+4. MUST follow Voice & Tone.
+5. MUST NOT invent claims, statistics, customers, testimonials, or partnerships.
+6. MUST only use claims listed under Approved Claims.
+7. MUST follow asset usage restrictions.
+8. When an approved asset exists, use it rather than recreating it.
+
+Use Products as the authoritative source for factual information about what the company offers and what each product can do.
+
+Do not invent product capabilities, integrations, statistics, customers, pricing, results, certifications, rankings, or other proof points.
+
+If the user's request requires information that is not available in this repository, ask for the missing information rather than inventing it.`;
+}
+
 function publicAssetUrl(url: string) {
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith("/")) return `${getPublicBaseUrl()}${url}`;
@@ -266,13 +289,10 @@ export function serializeRepoForAI({
     .filter(Boolean)
     .join("\n\n");
   const sections = [
+    aiInstructions(brandName),
     `# ${brandName}`,
     `Canonical BrandRepo: ${canonicalUrl}`,
     updatedLine,
-    section(
-      "Instructions for AI",
-      "Use Products as the authoritative source for factual information about what the company offers and what each product can do.\n\nOnly make factual marketing claims supported by Approved Claims or other explicit factual information in this repository.\n\nDo not invent product capabilities, integrations, statistics, customers, pricing, results, certifications, rankings, or other proof points.\n\nIf the user's request requires information that is not available in the repository, ask for the missing information rather than inventing it.",
-    ),
     section("Brand Basics", brandBasics),
     section("Products", productsBody),
     section("Audiences", audiencesBody),

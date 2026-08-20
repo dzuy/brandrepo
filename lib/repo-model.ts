@@ -192,6 +192,10 @@ export type ChatMessage = {
 export type WorkspaceState = {
   id: string;
   name: string;
+  ownerUserId?: string;
+  accountId?: string;
+  accountName?: string;
+  accountSlug?: string;
   visibility?: "public" | "unlisted" | "private";
   repo: RepoState;
   chatMessages: ChatMessage[];
@@ -201,7 +205,12 @@ export type WorkspaceState = {
 
 export type WorkspaceRow = {
   id: string;
+  user_id?: string | null;
   name: string;
+  account_id?: string | null;
+  account_slug?: string | null;
+  repo_slug?: string | null;
+  visibility?: WorkspaceState["visibility"] | null;
   data: WorkspaceState;
 };
 

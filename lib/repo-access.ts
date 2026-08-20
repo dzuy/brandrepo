@@ -68,7 +68,7 @@ async function loadWorkspacesByUserId(userId: string) {
   const serviceSupabase = createServiceSupabase();
   const { data, error } = await serviceSupabase
     .from("brandhub_workspaces")
-    .select("id,name,data")
+    .select("id,user_id,name,data,account_id,account_slug,repo_slug,visibility")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
@@ -76,7 +76,15 @@ async function loadWorkspacesByUserId(userId: string) {
     throw new RepoAccessError(error.message, 500);
   }
 
-  return ((data ?? []) as WorkspaceRow[]).map((row) => ({ ...row.data, id: row.id, name: row.name }));
+  return ((data ?? []) as WorkspaceRow[]).map((row) => ({
+    ...row.data,
+    id: row.id,
+    name: row.name,
+    ownerUserId: row.user_id ?? row.data.ownerUserId,
+    accountId: row.account_id ?? row.data.accountId,
+    accountSlug: row.account_slug ?? row.data.accountSlug,
+    visibility: row.visibility ?? row.data.visibility,
+  }));
 }
 
 async function logIntegrationAccess(
@@ -170,18 +178,25 @@ export async function loadAuthenticatedWorkspaces(request: Request): Promise<Wor
     return loadWorkspacesByOAuthAccessToken(token, request);
   }
 
-  const { authenticatedSupabase, user } = await authenticateSupabaseRequest(request);
+  const { authenticatedSupabase } = await authenticateSupabaseRequest(request);
   const { data, error } = await authenticatedSupabase
     .from("brandhub_workspaces")
-    .select("id,name,data")
-    .eq("user_id", user.id)
+    .select("id,user_id,name,data,account_id,account_slug,repo_slug,visibility")
     .order("updated_at", { ascending: false });
 
   if (error) {
     throw new RepoAccessError(error.message, 500);
   }
 
-  return ((data ?? []) as WorkspaceRow[]).map((row) => ({ ...row.data, id: row.id, name: row.name }));
+  return ((data ?? []) as WorkspaceRow[]).map((row) => ({
+    ...row.data,
+    id: row.id,
+    name: row.name,
+    ownerUserId: row.user_id ?? row.data.ownerUserId,
+    accountId: row.account_id ?? row.data.accountId,
+    accountSlug: row.account_slug ?? row.data.accountSlug,
+    visibility: row.visibility ?? row.data.visibility,
+  }));
 }
 
 export function findWorkspace(workspaces: WorkspaceState[], repoId: string) {

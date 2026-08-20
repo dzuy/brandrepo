@@ -11,13 +11,14 @@
   --panel-soft: #202634;
   --panel-subtle: #131720;
   --ink: #f8fafc;
-  --accent: #0891b2;
-  --accent-ink: #ffffff;
-  --accent-dark: #06b6d4;
-  --accent-soft: #103444;
-  --accent-line: #155e75;
-  --secondary: #7c3aed;
-  --secondary-soft: #24183d;
+  --accent: #f8fafc;
+  --accent-ink: #090b10;
+  --accent-dark: #e5e7eb;
+  --accent-strong: #ffffff;
+  --accent-soft: #20242d;
+  --accent-line: #414b5d;
+  --secondary: #cbd5e1;
+  --secondary-soft: #20242d;
   --danger: #f87171;
   --danger-soft: #3a171d;
   --danger-line: #7f1d1d;
@@ -36,9 +37,10 @@
   --rail-line: rgba(255, 255, 255, 0.1);
   --auth-overlay-start: rgba(15, 17, 23, 0.3);
   --auth-overlay-end: rgba(15, 17, 23, 0.95);
-  --active-foreground: #67e8f9;
+  --active-foreground: #f8fafc;
   --asset-checker-bg: #0f1117;
-  --success: #34d399;
+  --success: #c6ceda;
+  --focus-ring: rgba(248, 250, 252, 0.12);
   --radius: 8px;
   --control-height: 40px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
@@ -57,13 +59,14 @@
   --panel-soft: #f3f8fb;
   --panel-subtle: #f8fafc;
   --ink: #18181b;
-  --accent: #0891b2;
+  --accent: #18181b;
   --accent-ink: #ffffff;
-  --accent-dark: #0e7490;
-  --accent-soft: #e0f2fe;
-  --accent-line: #67e8f9;
-  --secondary: #7c3aed;
-  --secondary-soft: #f1ecff;
+  --accent-dark: #000000;
+  --accent-strong: #000000;
+  --accent-soft: #f3f4f6;
+  --accent-line: #c9d2df;
+  --secondary: #667085;
+  --secondary-soft: #f3f4f6;
   --danger: #b91c1c;
   --danger-soft: #fff1f2;
   --danger-line: #fecaca;
@@ -82,9 +85,10 @@
   --rail-line: #d8dee8;
   --auth-overlay-start: rgba(255, 255, 255, 0.72);
   --auth-overlay-end: rgba(245, 247, 250, 0.96);
-  --active-foreground: #164e63;
+  --active-foreground: #18181b;
   --asset-checker-bg: #ffffff;
-  --success: #047857;
+  --success: #475467;
+  --focus-ring: rgba(24, 24, 27, 0.12);
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-md: 0 12px 30px rgba(16, 24, 40, 0.08);
   color-scheme: light;
@@ -127,7 +131,7 @@ button {
   border: 0;
   border-radius: var(--radius);
   background: var(--accent);
-  color: white;
+  color: var(--accent-ink);
   cursor: pointer;
   font-weight: 700;
   min-height: var(--control-height);
@@ -168,7 +172,7 @@ select:focus,
 textarea:focus,
 button:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.14);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 textarea {
@@ -759,11 +763,83 @@ button.auth-oauth-button:focus-visible {
 .campaign-detail,
 .asset-grid article,
 .asset-upload-band,
-.settings-panel {
+.settings-panel,
+.admin-card,
+.admin-account-list,
+.admin-account-row {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
+}
+
+.admin-page {
+  display: grid;
+  gap: 22px;
+}
+
+.admin-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-card {
+  align-content: start;
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.admin-card h2,
+.admin-account-list h2,
+.admin-account-row h3 {
+  margin: 0;
+}
+
+.admin-card p:not(.eyebrow),
+.admin-account-row p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.admin-account-list {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.admin-account-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-account-row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 18px;
+}
+
+.admin-account-row dl {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(72px, auto));
+  margin: 0;
+}
+
+.admin-account-row dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-account-row dd {
+  font-weight: 700;
+  margin: 4px 0 0;
 }
 
 .setup-panel {
@@ -1638,7 +1714,7 @@ button.read-field-edit:focus-visible {
 }
 
 .section-sources a {
-  color: var(--accent-dark);
+  color: var(--ink);
   font-size: 0.86rem;
   overflow-wrap: anywhere;
   text-decoration: none;
@@ -1769,7 +1845,7 @@ button.read-field-edit:focus-visible {
 .danger-link {
   background: transparent;
   border: 0;
-  color: var(--accent-strong);
+  color: var(--muted-strong);
   cursor: pointer;
   font-family: inherit;
   font-size: 0.88rem;
@@ -2216,7 +2292,7 @@ button.read-field-edit:focus-visible {
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  color: white;
+  color: var(--accent-ink);
   display: inline-flex;
   font-size: 0.95rem;
   font-weight: 700;
@@ -2227,7 +2303,7 @@ button.read-field-edit:focus-visible {
 
 .button-link:hover {
   background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  border-color: var(--muted-strong);
 }
 
 .button-link.secondary {
@@ -2899,7 +2975,7 @@ button.read-field-edit:focus-visible {
 }
 
 .owned-overview-collapsible {
-  max-height: 620px;
+  max-height: 760px;
   overflow: hidden;
   position: relative;
   transition: max-height 220ms ease;
@@ -2914,11 +2990,11 @@ button.read-field-edit:focus-visible {
   gap: 16px;
 }
 
-.owned-overview-collapsible:not(.expanded)::after {
+.owned-overview-collapsible.can-expand:not(.expanded)::after {
   background: linear-gradient(to bottom, color-mix(in srgb, var(--panel) 0%, transparent), var(--panel));
   bottom: 0;
   content: "";
-  height: 72px;
+  height: 48px;
   left: 0;
   opacity: 1;
   pointer-events: none;
@@ -2962,13 +3038,13 @@ button.read-field-edit:focus-visible {
 }
 
 .owned-tone-list.use span {
-  background: color-mix(in srgb, #22c55e 9%, var(--panel) 91%);
-  border-color: color-mix(in srgb, #22c55e 24%, var(--line) 76%);
+  background: var(--panel-subtle);
+  border-color: var(--line);
 }
 
 .owned-tone-list.avoid span {
-  background: color-mix(in srgb, #ef4444 8%, var(--panel) 92%);
-  border-color: color-mix(in srgb, #ef4444 22%, var(--line) 78%);
+  background: var(--panel-subtle);
+  border-color: var(--line);
 }
 
 .owned-overview-logo-preview {
@@ -3223,6 +3299,18 @@ button.read-field-edit:focus-visible {
   border-radius: var(--radius-sm);
   display: block;
   height: 54px;
+}
+
+.owned-overview-card .public-color-grid {
+  gap: 18px 14px;
+}
+
+.owned-overview-card .public-color-grid article {
+  gap: 8px;
+}
+
+.owned-overview-card .public-color-grid span {
+  height: 92px;
 }
 
 .public-color-grid small,
@@ -4281,6 +4369,9 @@ button.asset-card:focus-visible {
   .setup-panel,
   .url-scan-row,
   .field-row,
+  .admin-grid,
+  .admin-account-row,
+  .admin-account-row dl,
   .campaign-detail dl div,
   .chat-input {
     grid-template-columns: 1fr;
@@ -4310,6 +4401,9 @@ button.asset-card:focus-visible {
   .asset-upload-band,
   .chat-panel,
   .settings-panel,
+  .admin-card,
+  .admin-account-list,
+  .admin-account-row,
   .import-review,
   .empty-state {
     padding: 14px;

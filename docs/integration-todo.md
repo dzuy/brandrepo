@@ -2,11 +2,16 @@
 
 This is the working backlog for BrandRepo integrations, auth, and external tool access. The source-of-truth architecture is in `docs/integration-architecture.md`.
 
+## Current Direction
+
+- [x] Use the public "Copy for AI" markdown URL as the current external-tool workflow.
+- [x] Test the public AI-readable markdown URL with ChatGPT.
+- [ ] Keep the public AI-readable markdown output polished, complete, and easy for external AI tools to use.
+- [ ] Make sure public AI-readable markdown includes direct public asset URLs for logos, icons, elements, imagery, and generated assets.
+- [ ] Revisit direct integrations only after the core public repo and AI-readable markdown workflow are strong.
+
 ## Next
 
-- [ ] Configure Google provider in Supabase Auth and Google Cloud.
-- [ ] Add `https://brandrepo.dev/**` to Supabase Auth redirect URLs after the production domain is connected.
-- [ ] Add `https://brandrepo.dev` and `https://www.brandrepo.dev` to Google OAuth authorized JavaScript origins after the production domain is connected.
 - [x] Add a temporary developer token view in Settings for local API/MCP testing.
 - [x] Add scoped integration tokens for external API/MCP testing.
 - [x] Document authenticated curl examples for read-only API endpoints.
@@ -33,6 +38,13 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 - [ ] Configure Supabase Google provider with the Google OAuth client ID and secret.
 - [ ] Configure Supabase Auth URL settings for local, Vercel, and production domains.
 - [ ] Configure Google OAuth consent screen branding for BrandRepo.
+- [ ] Test Google OAuth account creation and returning-user sign-in end to end.
+  - New users can create a BrandRepo account with Google.
+  - Required account name is captured and saved during or immediately after Google signup.
+  - Returning Google users sign in without recreating account details.
+  - Repos created after Google signup are tied to the authenticated user.
+  - Localhost, Vercel preview, and production redirect URLs all return users to BrandRepo successfully.
+  - Canceled or failed Google OAuth attempts show a clear, recoverable error state.
 - [ ] Decide whether to add a Supabase custom auth domain such as `auth.brandrepo.dev`.
 - [ ] Add account linking expectations for users who sign up with email and later use Google.
 - [x] Define production integration auth strategy.
@@ -55,6 +67,7 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 
 ## ChatGPT MCP
 
+- [ ] Paused: direct ChatGPT MCP integration is not the current path.
 - [ ] Confirm hosted MCP endpoint path: `/api/mcp` or `mcp.brandrepo.dev`.
 - [ ] Validate read-only MCP behavior with an external MCP client.
 - [x] Add production-safe error responses for MCP tool calls.
@@ -64,6 +77,7 @@ This is the working backlog for BrandRepo integrations, auth, and external tool 
 
 ## Later Integrations
 
+- [ ] Paused: direct integrations are deferred while BrandRepo uses the public "Copy for AI" markdown workflow.
 - [x] Claude MCP support using the same Repo Context Service.
 - [ ] Figma integration for logos, colors, typography, and identity rules.
 - [ ] Canva integration for approved assets and brand-kit workflows.

@@ -1,6 +1,7 @@
 create table if not exists public.brandhub_workspaces (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid,
   name text not null,
   data jsonb not null,
   account_slug text,
@@ -8,6 +9,36 @@ create table if not exists public.brandhub_workspaces (
   visibility text not null default 'public' check (visibility in ('public', 'unlisted', 'private')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.brandrepo_accounts (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.brandrepo_account_memberships (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references public.brandrepo_accounts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'viewer' check (role in ('owner', 'admin', 'editor', 'viewer')),
+  created_at timestamptz not null default now(),
+  unique (account_id, user_id)
+);
+
+create table if not exists public.brandrepo_account_invites (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references public.brandrepo_accounts(id) on delete cascade,
+  email text not null,
+  role text not null default 'admin' check (role in ('owner', 'admin', 'editor', 'viewer')),
+  invited_by uuid references auth.users(id) on delete set null,
+  invited_user_id uuid references auth.users(id) on delete set null,
+  status text not null default 'sent' check (status in ('sent', 'accepted', 'revoked')),
+  created_at timestamptz not null default now(),
+  accepted_at timestamptz
 );
 
 alter table public.brandhub_workspaces
@@ -18,6 +49,9 @@ alter table public.brandhub_workspaces
 
 alter table public.brandhub_workspaces
   add column if not exists visibility text not null default 'public';
+
+alter table public.brandhub_workspaces
+  add column if not exists account_id uuid references public.brandrepo_accounts(id) on delete cascade;
 
 do $$
 begin
@@ -35,9 +69,27 @@ end $$;
 create index if not exists brandhub_workspaces_user_id_idx
   on public.brandhub_workspaces (user_id);
 
+create index if not exists brandhub_workspaces_account_id_idx
+  on public.brandhub_workspaces (account_id);
+
 create index if not exists brandhub_workspaces_public_slug_idx
   on public.brandhub_workspaces (account_slug, repo_slug, updated_at desc)
   where visibility = 'public';
+
+create index if not exists brandrepo_accounts_slug_idx
+  on public.brandrepo_accounts (slug);
+
+create index if not exists brandrepo_account_memberships_user_id_idx
+  on public.brandrepo_account_memberships (user_id);
+
+create index if not exists brandrepo_account_memberships_account_id_idx
+  on public.brandrepo_account_memberships (account_id);
+
+create index if not exists brandrepo_account_invites_account_id_idx
+  on public.brandrepo_account_invites (account_id, created_at desc);
+
+create index if not exists brandrepo_account_invites_email_idx
+  on public.brandrepo_account_invites (lower(email));
 
 create table if not exists public.brandrepo_integration_tokens (
   id uuid primary key default gen_random_uuid(),
@@ -173,6 +225,9 @@ create index if not exists brandrepo_external_connections_provider_idx
   on public.brandrepo_external_connections (provider);
 
 alter table public.brandhub_workspaces enable row level security;
+alter table public.brandrepo_accounts enable row level security;
+alter table public.brandrepo_account_memberships enable row level security;
+alter table public.brandrepo_account_invites enable row level security;
 alter table public.brandrepo_integration_tokens enable row level security;
 alter table public.brandrepo_oauth_clients enable row level security;
 alter table public.brandrepo_oauth_authorization_codes enable row level security;
@@ -180,6 +235,94 @@ alter table public.brandrepo_oauth_access_tokens enable row level security;
 alter table public.brandrepo_integration_access_logs enable row level security;
 alter table public.brandrepo_external_oauth_states enable row level security;
 alter table public.brandrepo_external_connections enable row level security;
+
+create or replace function public.brandrepo_is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(auth.jwt() ->> 'email', '') = 'dzuylinh@gmail.com';
+$$;
+
+create or replace function public.brandrepo_is_account_member(target_account_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.brandrepo_is_platform_admin()
+    or exists (
+      select 1
+      from public.brandrepo_account_memberships membership
+      where membership.account_id = target_account_id
+        and membership.user_id = auth.uid()
+    );
+$$;
+
+create or replace function public.brandrepo_can_edit_account(target_account_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.brandrepo_is_platform_admin()
+    or exists (
+      select 1
+      from public.brandrepo_account_memberships membership
+      where membership.account_id = target_account_id
+        and membership.user_id = auth.uid()
+        and membership.role in ('owner', 'admin', 'editor')
+    );
+$$;
+
+drop policy if exists "Users can read their BrandRepo accounts" on public.brandrepo_accounts;
+create policy "Users can read their BrandRepo accounts"
+  on public.brandrepo_accounts
+  for select
+  using (public.brandrepo_is_account_member(id));
+
+drop policy if exists "Platform admin can create BrandRepo accounts" on public.brandrepo_accounts;
+create policy "Platform admin can create BrandRepo accounts"
+  on public.brandrepo_accounts
+  for insert
+  with check (public.brandrepo_is_platform_admin());
+
+drop policy if exists "Platform admin can update BrandRepo accounts" on public.brandrepo_accounts;
+create policy "Platform admin can update BrandRepo accounts"
+  on public.brandrepo_accounts
+  for update
+  using (public.brandrepo_is_platform_admin())
+  with check (public.brandrepo_is_platform_admin());
+
+drop policy if exists "Users can read their BrandRepo account memberships" on public.brandrepo_account_memberships;
+create policy "Users can read their BrandRepo account memberships"
+  on public.brandrepo_account_memberships
+  for select
+  using (public.brandrepo_is_account_member(account_id));
+
+drop policy if exists "Platform admin can manage BrandRepo account memberships" on public.brandrepo_account_memberships;
+create policy "Platform admin can manage BrandRepo account memberships"
+  on public.brandrepo_account_memberships
+  for all
+  using (public.brandrepo_is_platform_admin())
+  with check (public.brandrepo_is_platform_admin());
+
+drop policy if exists "Account admins can read BrandRepo account invites" on public.brandrepo_account_invites;
+create policy "Account admins can read BrandRepo account invites"
+  on public.brandrepo_account_invites
+  for select
+  using (public.brandrepo_can_edit_account(account_id));
+
+drop policy if exists "Platform admin can manage BrandRepo account invites" on public.brandrepo_account_invites;
+create policy "Platform admin can manage BrandRepo account invites"
+  on public.brandrepo_account_invites
+  for all
+  using (public.brandrepo_is_platform_admin())
+  with check (public.brandrepo_is_platform_admin());
 
 drop policy if exists "Users can read their BrandRepo external OAuth states" on public.brandrepo_external_oauth_states;
 create policy "Users can read their BrandRepo external OAuth states"
@@ -256,7 +399,7 @@ drop policy if exists "Users can read their BrandRepo repos" on public.brandhub_
 create policy "Users can read their BrandRepo repos"
   on public.brandhub_workspaces
   for select
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id or public.brandrepo_is_account_member(account_id));
 
 drop policy if exists "Anyone can read public BrandRepo repos" on public.brandhub_workspaces;
 create policy "Anyone can read public BrandRepo repos"
@@ -270,7 +413,7 @@ drop policy if exists "Users can create their BrandRepo repos" on public.brandhu
 create policy "Users can create their BrandRepo repos"
   on public.brandhub_workspaces
   for insert
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id or public.brandrepo_can_edit_account(account_id));
 
 drop policy if exists "Users can update their BrandHub workspaces" on public.brandhub_workspaces;
 drop policy if exists "Users can update their BrandHub repos" on public.brandhub_workspaces;
@@ -278,8 +421,8 @@ drop policy if exists "Users can update their BrandRepo repos" on public.brandhu
 create policy "Users can update their BrandRepo repos"
   on public.brandhub_workspaces
   for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (auth.uid() = user_id or public.brandrepo_can_edit_account(account_id))
+  with check (auth.uid() = user_id or public.brandrepo_can_edit_account(account_id));
 
 drop policy if exists "Users can delete their BrandHub workspaces" on public.brandhub_workspaces;
 drop policy if exists "Users can delete their BrandHub repos" on public.brandhub_workspaces;
@@ -287,7 +430,7 @@ drop policy if exists "Users can delete their BrandRepo repos" on public.brandhu
 create policy "Users can delete their BrandRepo repos"
   on public.brandhub_workspaces
   for delete
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id or public.brandrepo_can_edit_account(account_id));
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

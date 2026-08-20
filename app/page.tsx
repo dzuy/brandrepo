@@ -45,7 +45,7 @@ import {
   repoTabs,
 } from "../lib/repo-model";
 
-type NavSection = "Overview" | "Create" | "Repo" | "Connected Apps" | "Campaigns" | "Assets" | "Settings";
+type NavSection = "Overview" | "Create" | "Repo" | "Connected Apps" | "Campaigns" | "Assets" | "Admin" | "Settings";
 type ThemeMode = "dark" | "light";
 type AuthMode = "sign-in" | "sign-up" | "reset-password" | "update-password";
 
@@ -95,6 +95,17 @@ type ExternalConnectionView = {
   connectedAt: string;
   updatedAt: string;
   expiresAt: string | null;
+};
+
+type AdminAccountView = {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  updated_at: string;
+  brandhub_workspaces?: { id: string; name: string; updated_at?: string | null }[];
+  brandrepo_account_memberships?: { id: string; user_id: string; role: string; created_at: string }[];
+  brandrepo_account_invites?: { id: string; email: string; role: string; status: string; created_at: string; accepted_at?: string | null }[];
 };
 
 type IdentityField = keyof IdentitySettings;
@@ -425,6 +436,10 @@ function isValidAccountName(value: string) {
 function getAccountName(user: User | null) {
   const value = user?.user_metadata?.account_name;
   return typeof value === "string" ? value : "";
+}
+
+function isPlatformAdmin(user: User | null) {
+  return user?.email?.toLowerCase() === "dzuylinh@gmail.com";
 }
 
 function getLocallyActiveWorkspaceId() {
@@ -1320,6 +1335,12 @@ export default function Home() {
   const [externalConnections, setExternalConnections] = useState<ExternalConnectionView[]>([]);
   const [externalConnectionStatus, setExternalConnectionStatus] = useState<"idle" | "loading" | "connecting" | "saving" | "revoking" | "error">("idle");
   const [externalConnectionError, setExternalConnectionError] = useState("");
+  const [adminAccounts, setAdminAccounts] = useState<AdminAccountView[]>([]);
+  const [adminStatus, setAdminStatus] = useState<"idle" | "loading" | "creating" | "inviting" | "success" | "error">("idle");
+  const [adminError, setAdminError] = useState("");
+  const [adminAccountName, setAdminAccountName] = useState("");
+  const [adminInviteEmail, setAdminInviteEmail] = useState("");
+  const [adminInviteAccountId, setAdminInviteAccountId] = useState("");
   const [developerSettingsOpen, setDeveloperSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [themePreferenceReady, setThemePreferenceReady] = useState(false);
@@ -1370,6 +1391,7 @@ export default function Home() {
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
   const repo = activeWorkspace?.repo ?? initialRepo;
   const chatMessages = activeWorkspace?.chatMessages ?? createWelcomeChat();
+  const visibleNavItems: NavSection[] = isPlatformAdmin(currentUser) ? [...navItems, "Admin"] : navItems;
   const hasChatConversation = chatMessages.some((message) => message.id !== "welcome");
   const visibleAssets = repo.assets.filter((asset) => asset.metadata.includes("generated") || !isRepoSectionVisualAsset(asset));
   const selectedAsset = assetDrawerAssetId ? repo.assets.find((asset) => asset.id === assetDrawerAssetId) ?? null : null;
@@ -1442,6 +1464,7 @@ export default function Home() {
         setExternalConnectionStatus("idle");
         setExternalConnectionError("");
         if (currentUser && isSupabaseConfigured) {
+          // eslint-disable-next-line react-hooks/immutability
           void loadExternalConnections();
         }
       }
@@ -1455,11 +1478,20 @@ export default function Home() {
 
   useEffect(() => {
     if ((section !== "Settings" && section !== "Connected Apps") || !currentUser || !isSupabaseConfigured) return;
+    // eslint-disable-next-line react-hooks/immutability
     void loadOAuthConnections();
     void loadExternalConnections();
     if (section === "Settings") {
+      // eslint-disable-next-line react-hooks/immutability
       void loadIntegrationTokens();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, currentUser?.id]);
+
+  useEffect(() => {
+    if (section !== "Admin" || !currentUser || !isPlatformAdmin(currentUser)) return;
+    // eslint-disable-next-line react-hooks/immutability
+    void loadAdminAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, currentUser?.id]);
 
@@ -1660,8 +1692,7 @@ export default function Home() {
       setSyncStatus("Loading repos...");
       const { data, error } = await supabase
         .from("brandhub_workspaces")
-        .select("id,name,data")
-        .eq("user_id", currentUser.id)
+        .select("id,user_id,name,data,account_id,account_slug,repo_slug,visibility")
         .order("updated_at", { ascending: false });
 
       if (cancelled) return;
@@ -1674,7 +1705,15 @@ export default function Home() {
 
       const rows = (data ?? []) as WorkspaceRow[];
       if (rows.length) {
-        const cloudWorkspaces = rows.map((row) => ({ ...row.data, id: row.id, name: row.name }));
+        const cloudWorkspaces = rows.map((row) => ({
+          ...row.data,
+          id: row.id,
+          name: row.name,
+          ownerUserId: row.user_id ?? row.data.ownerUserId,
+          accountId: row.account_id ?? row.data.accountId,
+          accountSlug: row.account_slug ?? row.data.accountSlug,
+          visibility: row.visibility ?? row.data.visibility,
+        }));
         const localActiveWorkspaceId = activeWorkspaceId || getLocallyActiveWorkspaceId();
         const selectedWorkspace =
           cloudWorkspaces.find((workspace) => workspace.id === localActiveWorkspaceId) ?? cloudWorkspaces[0];
@@ -1706,10 +1745,14 @@ export default function Home() {
       setSyncStatus("Saving...");
       const payload = workspaces.map((workspace) => ({
         id: workspace.id,
-        user_id: currentUser.id,
+        user_id: workspace.ownerUserId ?? currentUser.id,
+        account_id: workspace.accountId ?? null,
         name: workspace.name,
-        data: workspace,
-        account_slug: normalizeAccountName(getAccountName(currentUser)),
+        data: {
+          ...workspace,
+          ownerUserId: workspace.ownerUserId ?? currentUser.id,
+        },
+        account_slug: workspace.accountSlug ?? normalizeAccountName(getAccountName(currentUser)),
         repo_slug: getRepoSlug(workspace),
         visibility: workspace.visibility ?? "public",
         updated_at: new Date().toISOString(),
@@ -1747,7 +1790,6 @@ export default function Home() {
         const { error } = await supabase
           .from("brandhub_workspaces")
           .delete()
-          .eq("user_id", currentUser.id)
           .in("id", deleteIds);
 
         if (error) {
@@ -2230,7 +2272,6 @@ export default function Home() {
       const { error } = await supabase
         .from("brandhub_workspaces")
         .delete()
-        .eq("user_id", currentUser.id)
         .eq("id", deleteId);
 
       if (error) {
@@ -2595,6 +2636,111 @@ export default function Home() {
     } catch (error) {
       setExternalConnectionStatus("error");
       setExternalConnectionError(error instanceof Error ? error.message : "Unable to revoke external app connection.");
+    }
+  }
+
+  async function loadAdminAccounts() {
+    if (!isPlatformAdmin(currentUser)) return;
+
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setAdminStatus("loading");
+      setAdminError("");
+      const response = await fetch("/api/admin/accounts", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const payload = (await response.json().catch(() => ({}))) as { accounts?: AdminAccountView[]; error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to load customer accounts.");
+      }
+
+      setAdminAccounts(payload.accounts ?? []);
+      setAdminStatus("idle");
+    } catch (error) {
+      setAdminStatus("error");
+      setAdminError(error instanceof Error ? error.message : "Unable to load customer accounts.");
+    }
+  }
+
+  async function createCustomerAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adminAccountName.trim()) return;
+
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setAdminStatus("creating");
+      setAdminError("");
+      const response = await fetch("/api/admin/accounts", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: adminAccountName.trim() }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        account?: AdminAccountView;
+        workspace?: WorkspaceState;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.account || !payload.workspace) {
+        throw new Error(payload.error ?? "Unable to create customer account.");
+      }
+
+      const nextWorkspace = {
+        ...payload.workspace,
+        ownerUserId: currentUser?.id,
+        accountId: payload.account.id,
+        accountName: payload.account.name,
+        accountSlug: payload.account.slug,
+      };
+      const nextWorkspaces = [nextWorkspace, ...workspaces.filter((workspace) => workspace.id !== nextWorkspace.id)];
+      setWorkspaces(nextWorkspaces);
+      resetTransientWorkspaceState(nextWorkspace, nextWorkspaces);
+      setAdminAccountName("");
+      setSection("Repo");
+      setRepoOverviewActive(true);
+      setSyncStatus("Synced to Supabase");
+      await loadAdminAccounts();
+      setAdminStatus("success");
+    } catch (error) {
+      setAdminStatus("error");
+      setAdminError(error instanceof Error ? error.message : "Unable to create customer account.");
+    }
+  }
+
+  async function inviteCustomerAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adminInviteAccountId || !adminInviteEmail.trim()) return;
+
+    try {
+      const accessToken = await getCurrentAccessToken();
+      setAdminStatus("inviting");
+      setAdminError("");
+      const response = await fetch(`/api/admin/accounts/${adminInviteAccountId}/invite`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: adminInviteEmail.trim(), role: "admin" }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to send invite.");
+      }
+
+      setAdminInviteEmail("");
+      await loadAdminAccounts();
+      setAdminStatus("success");
+    } catch (error) {
+      setAdminStatus("error");
+      setAdminError(error instanceof Error ? error.message : "Unable to send invite.");
     }
   }
 
@@ -3573,7 +3719,7 @@ export default function Home() {
           </label>
         </div>
         <nav>
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <div className="nav-group" key={item}>
               <div className="nav-row">
                 <button
@@ -4001,6 +4147,117 @@ export default function Home() {
             </section>
           </div>
         )}
+
+        {section === "Admin" && isPlatformAdmin(currentUser) ? (
+          <section className="admin-page">
+            <header className="topbar">
+              <div>
+                <p>Platform admin</p>
+                <h1>Admin</h1>
+              </div>
+              <button className="secondary" disabled={adminStatus === "loading"} onClick={loadAdminAccounts} type="button">
+                {adminStatus === "loading" ? "Loading..." : "Refresh"}
+              </button>
+            </header>
+            {adminError ? <p className="import-error">{adminError}</p> : null}
+            {adminStatus === "success" ? <p className="success-text">Done.</p> : null}
+            <section className="admin-grid">
+              <form className="admin-card" onSubmit={createCustomerAccount}>
+                <div>
+                  <p className="eyebrow">Customer account</p>
+                  <h2>Create account and repo</h2>
+                  <p>Create the customer org and a starter repo you can fill in before inviting them.</p>
+                </div>
+                <label>
+                  Account name
+                  <input
+                    onChange={(event) => setAdminAccountName(event.target.value)}
+                    placeholder="Acme"
+                    required
+                    value={adminAccountName}
+                  />
+                </label>
+                <p className="form-note">
+                  The public account slug will be generated from this name.
+                </p>
+                <button disabled={adminStatus === "creating"} type="submit">
+                  {adminStatus === "creating" ? "Creating..." : "Create account"}
+                </button>
+              </form>
+              <form className="admin-card" onSubmit={inviteCustomerAdmin}>
+                <div>
+                  <p className="eyebrow">Customer invite</p>
+                  <h2>Invite customer admin</h2>
+                  <p>Invite a customer into their account. They can edit every repo in that account.</p>
+                </div>
+                <label>
+                  Account
+                  <select
+                    onChange={(event) => setAdminInviteAccountId(event.target.value)}
+                    required
+                    value={adminInviteAccountId}
+                  >
+                    <option value="">Select account</option>
+                    {adminAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Email
+                  <input
+                    onChange={(event) => setAdminInviteEmail(event.target.value)}
+                    placeholder="customer@example.com"
+                    required
+                    type="email"
+                    value={adminInviteEmail}
+                  />
+                </label>
+                <button disabled={adminStatus === "inviting"} type="submit">
+                  {adminStatus === "inviting" ? "Sending..." : "Send invite"}
+                </button>
+              </form>
+            </section>
+            <section className="admin-account-list">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Accounts</p>
+                  <h2>Customer accounts</h2>
+                </div>
+              </div>
+              {adminAccounts.length ? (
+                <div className="admin-account-stack">
+                  {adminAccounts.map((account) => (
+                    <article className="admin-account-row" key={account.id}>
+                      <div>
+                        <h3>{account.name}</h3>
+                        <p>brandrepo.dev/{account.slug}</p>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Repos</dt>
+                          <dd>{account.brandhub_workspaces?.length ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>Members</dt>
+                          <dd>{account.brandrepo_account_memberships?.length ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>Invites</dt>
+                          <dd>{account.brandrepo_account_invites?.length ?? 0}</dd>
+                        </div>
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No customer accounts yet" description="Create a customer account to start setting up repos for them." />
+              )}
+            </section>
+          </section>
+        ) : null}
 
         {section === "Settings" && (
           <section className="settings-page">
@@ -5226,6 +5483,15 @@ function NavIcon({ item }: { item: NavSection }) {
     );
   }
 
+  if (item === "Admin") {
+    return (
+      <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M12 3 5 6v5c0 4.4 2.8 8.4 7 10 4.2-1.6 7-5.6 7-10V6l-7-3Z" />
+        <path d="M9.5 12.5 11.2 14 15 9.8" />
+      </svg>
+    );
+  }
+
   return (
     <svg aria-hidden="true" className="nav-item-icon" fill="none" viewBox="0 0 24 24">
       <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
@@ -5312,7 +5578,15 @@ function ExpandableOverviewContent({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <div className={expanded ? "owned-overview-collapsible expanded" : "owned-overview-collapsible"}>
+      <div
+        className={[
+          "owned-overview-collapsible",
+          canExpand ? "can-expand" : "",
+          expanded ? "expanded" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div ref={contentRef}>{children}</div>
       </div>
       {canExpand ? (
