@@ -462,6 +462,15 @@ button.auth-oauth-button:focus-visible {
   position: relative;
 }
 
+.select-label {
+  display: block;
+  color: var(--rail-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin: 0 0 5px;
+  text-transform: uppercase;
+}
+
 .workspace-switcher select {
   appearance: none;
   background: var(--rail-control);
@@ -478,7 +487,7 @@ button.auth-oauth-button:focus-visible {
   text-overflow: ellipsis;
 }
 
-.repo-select span {
+.repo-select > span:not(.select-label) {
   border: solid var(--rail-muted);
   border-width: 0 1.8px 1.8px 0;
   height: 7px;
@@ -499,7 +508,7 @@ button.auth-oauth-button:focus-visible {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.repo-select:focus-within span {
+.repo-select:focus-within > span:not(.select-label) {
   border-color: var(--rail-foreground);
 }
 

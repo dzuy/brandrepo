@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const membershipResult = await serviceSupabase.from("brandrepo_account_memberships").insert({
       account_id: account.id,
       user_id: user.id,
-      role: "owner",
+      role: "admin",
     });
 
     if (membershipResult.error) {
@@ -110,4 +110,3 @@ export async function POST(request: Request) {
     return repoAccessErrorResponse(error);
   }
 }
-
